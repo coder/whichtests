@@ -1,0 +1,8 @@
+# Go build artifacts
+/testselect
+*.test
+*.out
+
+# Editor scratch
+*.swp
+.DS_Store
