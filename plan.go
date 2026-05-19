@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -79,21 +78,6 @@ func selectTestPlan(ctx context.Context, cfg config, git gitRunner) ([]string, b
 		return nil, buildResult{}, err
 	}
 	return changedFiles, result, nil
-}
-
-func mergePackageSelection(selections map[packageKey]*packageSelection, selection *packageSelection) {
-	merged := selections[selection.Key]
-	if merged == nil {
-		merged = &packageSelection{
-			Key:   selection.Key,
-			Tests: map[string]struct{}{},
-			Files: map[string]struct{}{},
-		}
-		selections[selection.Key] = merged
-	}
-	merged.Broadened = merged.Broadened || selection.Broadened
-	maps.Copy(merged.Files, selection.Files)
-	maps.Copy(merged.Tests, selection.Tests)
 }
 
 func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResult, error) {
@@ -301,12 +285,4 @@ func countDescription(count string) string {
 		return "once"
 	}
 	return count + " times"
-}
-
-func packagePattern(dir string) string {
-	cleanDir := filepath.ToSlash(filepath.Clean(dir))
-	if cleanDir == "." {
-		return "."
-	}
-	return "./" + cleanDir
 }

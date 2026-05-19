@@ -145,6 +145,21 @@ func mergeSelection(ctx context.Context, cache *inventoryCache, revision string,
 	return nil
 }
 
+func mergePackageSelection(selections map[packageKey]*packageSelection, selection *packageSelection) {
+	merged := selections[selection.Key]
+	if merged == nil {
+		merged = &packageSelection{
+			Key:   selection.Key,
+			Tests: map[string]struct{}{},
+			Files: map[string]struct{}{},
+		}
+		selections[selection.Key] = merged
+	}
+	merged.Broadened = merged.Broadened || selection.Broadened
+	maps.Copy(merged.Files, selection.Files)
+	maps.Copy(merged.Tests, selection.Tests)
+}
+
 func selectTestsForSnapshots(change testFileChange, oldData, newData []byte, newInventory packageInventory, hunks []diffHunk) *packageSelection {
 	newSnapshot, err := parseFileSnapshot(newData)
 	if err != nil {
@@ -291,4 +306,12 @@ func addMatchingTests(selected map[string]struct{}, tests map[string]lineRange, 
 
 func (key packageKey) String() string {
 	return fmt.Sprintf("%s (%s)", packagePattern(key.Dir), key.Name)
+}
+
+func packagePattern(dir string) string {
+	cleanDir := filepath.ToSlash(filepath.Clean(dir))
+	if cleanDir == "." {
+		return "."
+	}
+	return "./" + cleanDir
 }
