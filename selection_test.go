@@ -48,7 +48,7 @@ func TestBeta(t *testing.T) {
 	t.Log("stable beta")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -112,7 +112,7 @@ func TestBeta(t *testing.T) {
 	t.Log("new beta")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -171,7 +171,7 @@ func TestAlpha(t *testing.T) {
 	setup(t)
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -247,7 +247,7 @@ func TestAlpha(t *testing.T) {
 	t.Log(packageValue)
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -323,7 +323,7 @@ func TestBeta(t *testing.T) {
 	t.Log("beta")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import (
@@ -401,7 +401,7 @@ func TestBeta(t *testing.T) {
 	setupCase(t)
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -484,7 +484,7 @@ func TestAlpha(t *testing.T) {
 	t.Log("alpha")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import (
@@ -556,7 +556,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import (
@@ -626,7 +626,7 @@ func init() {
 	register("after")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -686,7 +686,7 @@ func TestBeta(t *testing.T) {
 	t.Log("beta")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -754,7 +754,7 @@ func TestAlpha(t *testing.T) {
 	t.Log("alpha")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -824,7 +824,7 @@ func TestBeta(t *testing.T) {
 	t.Log("new beta")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import "testing"
@@ -875,7 +875,7 @@ func TestAlpha(t *T) {
 	t.Log("changed alpha")
 }
 `),
-			inventory: mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory: mustPackageInventory(t, map[string]string{
 				changedPath: `package sample
 
 import . "testing"
@@ -955,7 +955,7 @@ func TestAlpha(t *testing.T) {
 	t.Log("alpha")
 }
 `)
-	inventory := mustPackageInventory(t, "pkg", "sample", map[string]string{
+	inventory := mustPackageInventory(t, map[string]string{
 		"pkg/changed_test.go": string(newData),
 		"pkg/sibling_test.go": `package sample
 
@@ -1006,7 +1006,7 @@ func TestBeta(t *testing.T) {
 	t.Log("beta")
 }
 `)
-			inventory := mustPackageInventory(t, "pkg", "sample", map[string]string{
+			inventory := mustPackageInventory(t, map[string]string{
 				"pkg/changed_test.go": string(newData),
 			})
 			selection := selectTestsForSnapshots(change, oldData, newData, inventory, []diffHunk{{
@@ -1046,7 +1046,7 @@ func TestAlpha(t *testing.T) {
 	t.Log("alpha")
 }
 `)
-	inventory := mustPackageInventory(t, "pkg", "sample", map[string]string{
+	inventory := mustPackageInventory(t, map[string]string{
 		"pkg/changed_test.go": string(newData),
 		"pkg/sibling_test.go": `package sample
 

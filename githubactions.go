@@ -37,7 +37,7 @@ type githubEvent struct {
 }
 
 func githubActionsRunRequest(ctx context.Context, cfg commandConfig, git gitRunner) (runRequest, error) {
-	baseCfg := cfg.config.withDefaults()
+	baseCfg := cfg.withDefaults()
 	if baseCfg.OutMatrix == "" {
 		return runRequest{}, xerrors.New("--out-matrix is required")
 	}

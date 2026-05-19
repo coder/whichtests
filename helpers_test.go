@@ -19,10 +19,13 @@ func selectionNames(selection *packageSelection) []string {
 	return slices.Sorted(maps.Keys(selection.Tests))
 }
 
-func mustPackageInventory(t *testing.T, dir, packageName string, files map[string]string) packageInventory {
+// mustPackageInventory builds a packageInventory for the synthetic "pkg"
+// directory and "sample" package used throughout the test suite.
+func mustPackageInventory(t *testing.T, files map[string]string) packageInventory {
 	t.Helper()
+	const packageName = "sample"
 	inventory := packageInventory{
-		Key:   packageKey{Dir: dir, Name: packageName},
+		Key:   packageKey{Dir: "pkg", Name: packageName},
 		Tests: map[string][]testDecl{},
 	}
 	for filePath, content := range files {

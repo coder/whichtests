@@ -68,7 +68,7 @@ func selectTestPlan(ctx context.Context, cfg config, git gitRunner) ([]string, b
 	cache := newInventoryCache(cfg, git)
 	selections := map[packageKey]*packageSelection{}
 	for _, change := range changes {
-		if err := selectChange(ctx, cfg, git, cache, selections, change); err != nil {
+		if err = selectChange(ctx, cfg, git, cache, selections, change); err != nil {
 			return nil, buildResult{}, err
 		}
 	}

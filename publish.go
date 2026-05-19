@@ -85,7 +85,7 @@ func writeFile(path string, data []byte) error {
 	return nil
 }
 
-func appendFile(path string, data []byte) error {
+func appendFile(path string, data []byte) (err error) {
 	dir := filepath.Dir(path)
 	if dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -96,7 +96,13 @@ func appendFile(path string, data []byte) error {
 	if err != nil {
 		return xerrors.Errorf("open %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		// Surface Close errors only if Write succeeded; write paths can
+		// lose data on a deferred fsync/flush failure.
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = xerrors.Errorf("close %s: %w", path, cerr)
+		}
+	}()
 	if _, err := file.Write(data); err != nil {
 		return xerrors.Errorf("append %s: %w", path, err)
 	}
