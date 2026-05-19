@@ -1,8 +1,34 @@
-# Go build artifacts
-/testselect
-*.test
-*.out
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
-# Editor scratch
-*.swp
-.DS_Store
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Key files
+*.key
+*.pub
+*.pem
+
+# Output directory
+build/

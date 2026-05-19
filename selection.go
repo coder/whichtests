@@ -296,6 +296,7 @@ func needsOldSnapshot(hunks []diffHunk) bool {
 	}
 	return false
 }
+
 func addMatchingTests(selected map[string]struct{}, tests map[string]lineRange, candidate lineRange) {
 	for name, declRange := range tests {
 		if declRange.overlaps(candidate) {
