@@ -1,4 +1,4 @@
-// Command testselect produces deterministic Go test plans for the
+// Command whichtests produces deterministic Go test plans for the
 // flake-go workflow.
 package main
 

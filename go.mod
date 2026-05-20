@@ -1,4 +1,4 @@
-module github.com/coder/testselect
+module github.com/coder/whichtests
 
 go 1.26.2
 

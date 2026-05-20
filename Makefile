@@ -5,11 +5,11 @@ GO_FMT_FILES := $(shell find . $(FIND_EXCLUSIONS) -type f -name '*.go' -print0 |
 
 default: build
 
-build/testselect: $(GO_SRC_FILES) go.mod go.sum
+build/whichtests: $(GO_SRC_FILES) go.mod go.sum
 	mkdir -p ./build
-	go build -o ./build/testselect .
+	go build -o ./build/whichtests .
 
-build: build/testselect
+build: build/whichtests
 .PHONY: build
 
 fmt:

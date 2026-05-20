@@ -1,6 +1,6 @@
-# testselect
+# whichtests
 
-`testselect` is the Go test-plan generator that drives the `flake-go` CI
+`whichtests` is the Go test-plan generator that drives the `flake-go` CI
 workflow in `coder/coder`. Given a base/head git revision pair (or a
 GitHub Actions event), it walks the diff, parses each changed test
 file, picks the smallest set of tests to rerun, and emits a workflow
@@ -10,13 +10,13 @@ matrix plus a human-readable Markdown summary.
 
 ```sh
 go build ./
-./testselect --help
+./whichtests --help
 ```
 
 Typical invocation against the local working tree:
 
 ```sh
-./testselect \
+./whichtests \
   --repo-root . \
   --base-sha origin/main \
   --head-sha HEAD \
