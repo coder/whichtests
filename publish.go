@@ -75,7 +75,7 @@ func writeSummary(path, summary string, stdout io.Writer) error {
 func writeFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return xerrors.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
@@ -88,10 +88,11 @@ func writeFile(path string, data []byte) error {
 func appendFile(path string, data []byte) (err error) {
 	dir := filepath.Dir(path)
 	if dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err = os.MkdirAll(dir, 0o750); err != nil {
 			return xerrors.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
+	// #nosec G304: path is a user-supplied output path or a GitHub Actions runner path.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return xerrors.Errorf("open %s: %w", path, err)

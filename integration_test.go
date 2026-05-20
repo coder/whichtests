@@ -114,7 +114,7 @@ func TestEnsureRangeAvailableWithRealGitFetchesMovedBase(t *testing.T) {
 	workRoot := filepath.Join(root, "work")
 	bareRoot := filepath.Join(root, "upstream.git")
 	cloneRoot := filepath.Join(root, "clone")
-	require.NoError(t, os.MkdirAll(workRoot, 0o755))
+	require.NoError(t, os.MkdirAll(workRoot, 0o750))
 	runGit(t, workRoot, "init")
 	runGit(t, workRoot, "config", "user.email", "test@example.com")
 	runGit(t, workRoot, "config", "user.name", "Test User")

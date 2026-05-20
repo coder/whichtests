@@ -151,6 +151,7 @@ func workflowDispatchRunRequest(req runRequest, event githubEvent) (runRequest, 
 }
 
 func readGitHubEvent(path string) (githubEvent, error) {
+	// #nosec G304: path comes from the GitHub Actions runner environment.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return githubEvent{}, xerrors.Errorf("read GitHub event payload %s: %w", path, err)

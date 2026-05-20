@@ -93,6 +93,6 @@ func lineNumberForSubstring(t *testing.T, content, needle string) int {
 func writeTestFile(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 }
