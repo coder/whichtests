@@ -686,27 +686,14 @@ func TestBeta(t *testing.T) {
 	t.Log("beta")
 }
 `),
-			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("changed alpha")
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`,
-				"pkg/sibling_test.go": `package sample
-
-import "testing"
-
-func TestGamma(t *testing.T) {
-	t.Log("gamma")
-}
-`,
-			}),
+			inventory: packageInventory{
+				Key: packageKey{Dir: "pkg", Name: "sample"},
+				Tests: map[string]struct{}{
+					"TestAlpha": {},
+					"TestBeta":  {},
+					"TestGamma": {},
+				},
+			},
 			hunks: []diffHunk{{
 				Old: singleLineRange(t, `package sample
 
@@ -911,7 +898,7 @@ func TestAlpha(t *T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			selection := selectTestsForSnapshots(change, tt.oldData, tt.newData, tt.inventory, tt.hunks)
+			selection := selectTestsFromHunks(change, tt.oldData, tt.newData, tt.inventory, tt.hunks)
 			if tt.wantNoSelection {
 				require.Nil(t, selection)
 				return
@@ -966,7 +953,7 @@ func TestBeta(t *testing.T) {
 }
 `,
 	})
-	selection := selectTestsForSnapshots(change, oldData, newData, inventory, []diffHunk{{
+	selection := selectTestsFromHunks(change, oldData, newData, inventory, []diffHunk{{
 		Old: singleLineRange(t, string(oldData), `t.Log("before method")`),
 		New: singleLineRange(t, string(newData), `t.Log("changed method")`),
 	}})
@@ -1009,7 +996,7 @@ func TestBeta(t *testing.T) {
 			inventory := mustPackageInventory(t, map[string]string{
 				"pkg/changed_test.go": string(newData),
 			})
-			selection := selectTestsForSnapshots(change, oldData, newData, inventory, []diffHunk{{
+			selection := selectTestsFromHunks(change, oldData, newData, inventory, []diffHunk{{
 				Old: emptyRangeAt(7),
 				New: rangeSpan(
 					singleLineRange(t, string(newData), tt.needle),
@@ -1057,7 +1044,7 @@ func TestBeta(t *testing.T) {
 }
 `,
 	})
-	selection := selectTestsForSnapshots(change, oldData, newData, inventory, []diffHunk{{
+	selection := selectTestsFromHunks(change, oldData, newData, inventory, []diffHunk{{
 		Old: emptyRangeAt(3),
 		New: singleLineRange(t, string(newData), `_ "example.com/sideeffect"`),
 	}})

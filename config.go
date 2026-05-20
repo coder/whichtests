@@ -5,11 +5,11 @@ import (
 )
 
 const (
-	defaultRepoRoot    = "."
-	defaultHeadSHA     = "HEAD"
-	defaultOutSummary  = "-"
-	defaultTargetCount = "10"
-	runOnceTargetCount = "1"
+	defaultRepoRoot   = "."
+	defaultHeadSHA    = "HEAD"
+	defaultOutSummary = "-"
+	defaultTestCount  = "10"
+	runOnceTestCount  = "1"
 
 	// Package-wide and matrix-wide caps keep the detector cheap by
 	// running broad fallback targets once instead of repeatedly.
@@ -44,13 +44,7 @@ func (cfg config) withDefaults() config {
 type commandConfig struct {
 	config
 
-	GitHubActions     bool
-	GitHubEventName   string
-	GitHubEventPath   string
-	GitHubRepository  string
-	GitHubOutput      string
-	GitHubStepSummary string
-	Env               map[string]string
+	GitHubActions bool
 }
 
 func defaultCommandConfig() commandConfig {

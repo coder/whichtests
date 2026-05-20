@@ -1,11 +1,11 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/xerrors"
 )
 
 func TestParseChangeKindAcceptsTypeChanges(t *testing.T) {
@@ -61,7 +61,7 @@ func TestReadFileAtRevisionPropagatesExistenceCheckFailures(t *testing.T) {
 		failures: map[string]gitResponse{
 			gitKey("ls-tree", "-z", "--name-only", "head", "--", "pkg/sample_test.go"): {
 				result: gitResult{Stderr: "fatal: ls-tree failed", ExitCode: 128},
-				err:    xerrors.New("fatal: ls-tree failed"),
+				err:    errors.New("fatal: ls-tree failed"),
 			},
 		},
 	}

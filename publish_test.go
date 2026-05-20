@@ -23,7 +23,7 @@ func TestPublishPlanWritesCompactGitHubOutputs(t *testing.T) {
 		OutSummary:        summaryPath,
 		GitHubOutput:      outputPath,
 		GitHubStepSummary: stepSummaryPath,
-	}, matrixOutput{Include: []matrixEntry{{Package: "./pkg", RunRegex: "^(TestAlpha)(/.*)?$", TestCount: "10"}}}, summary, nil, 0)
+	}, matrixOutput{Include: []matrixEntry{{Package: "./pkg", RunRegex: "^(TestAlpha)(/.*)?$", TestCount: "10"}}}, summary, nil)
 	require.NoError(t, err)
 
 	matrixData, err := os.ReadFile(matrixPath)

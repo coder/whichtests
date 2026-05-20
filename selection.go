@@ -6,8 +6,6 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
-
-	"golang.org/x/xerrors"
 )
 
 type packageKey struct {
@@ -15,14 +13,9 @@ type packageKey struct {
 	Name string
 }
 
-type testDecl struct {
-	FilePath string
-	Range    lineRange
-}
-
 type packageInventory struct {
 	Key   packageKey
-	Tests map[string][]testDecl
+	Tests map[string]struct{}
 }
 
 func (inventory packageInventory) allTests() []string {
@@ -45,7 +38,7 @@ type packageSelection struct {
 func selectChange(ctx context.Context, cfg config, git gitRunner, cache *inventoryCache, selections map[packageKey]*packageSelection, change testFileChange) error {
 	hunks, err := listDiffHunks(ctx, cfg, git, change)
 	if err != nil {
-		return xerrors.Errorf("list diff hunks for %s: %w", change.displayPath(), err)
+		return fmt.Errorf("list diff hunks for %s: %w", change.displayPath(), err)
 	}
 	if len(hunks) == 0 {
 		return nil
@@ -60,7 +53,7 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 		return err
 	}
 	if change.NewPath != "" && isRunnableTestFilePath(change.NewPath) && !newExists {
-		return xerrors.Errorf("head revision %s is missing %s", cfg.HeadSHA, change.NewPath)
+		return fmt.Errorf("head revision %s is missing %s", cfg.HeadSHA, change.NewPath)
 	}
 
 	var oldKey packageKey
@@ -68,7 +61,7 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 	if oldExists {
 		oldKey, err = packageKeyForData(change.OldPath, oldData)
 		if err != nil {
-			return xerrors.Errorf("resolve old package for %s: %w", change.displayPath(), err)
+			return fmt.Errorf("resolve old package for %s: %w", change.displayPath(), err)
 		}
 	}
 	var newKey packageKey
@@ -76,14 +69,14 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 	if newExists {
 		newKey, err = packageKeyForData(change.NewPath, newData)
 		if err != nil {
-			return xerrors.Errorf("resolve new package for %s: %w", change.displayPath(), err)
+			return fmt.Errorf("resolve new package for %s: %w", change.displayPath(), err)
 		}
 	}
 
 	if newKeyOK {
 		inventory, err := cache.loadPackageInventory(ctx, cfg.HeadSHA, newKey)
 		if err != nil {
-			return xerrors.Errorf("load package inventory for %s: %w", newKey.String(), err)
+			return fmt.Errorf("load package inventory for %s: %w", newKey.String(), err)
 		}
 		selectionOldData := oldData
 		selectionHunks := hunks
@@ -91,7 +84,7 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 			selectionOldData = nil
 			selectionHunks = newSideOnlyHunks(hunks)
 		}
-		selection := selectTestsForSnapshots(change, selectionOldData, newData, inventory, selectionHunks)
+		selection := selectTestsFromHunks(change, selectionOldData, newData, inventory, selectionHunks)
 		if err := mergeSelection(ctx, cache, cfg.HeadSHA, selections, selection); err != nil {
 			return err
 		}
@@ -100,10 +93,10 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 	if oldKeyOK && (!newKeyOK || oldKey != newKey) {
 		inventory, err := cache.loadPackageInventory(ctx, cfg.HeadSHA, oldKey)
 		if err != nil {
-			return xerrors.Errorf("load package inventory for %s: %w", oldKey.String(), err)
+			return fmt.Errorf("load package inventory for %s: %w", oldKey.String(), err)
 		}
 		sourceChange := testFileChange{Kind: changeDeleted, OldPath: change.OldPath}
-		selection := selectSourceRemovalForSnapshots(sourceChange, oldData, inventory, hunks)
+		selection := selectSourceRemoval(sourceChange, oldData, inventory, hunks)
 		if err := mergeSelection(ctx, cache, cfg.HeadSHA, selections, selection); err != nil {
 			return err
 		}
@@ -115,11 +108,7 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 func packageKeyForData(filePath string, data []byte) (packageKey, error) {
 	snapshot, err := parseFileSnapshot(data)
 	if err != nil {
-		packageName, ok := fallbackPackageName(data)
-		if !ok {
-			return packageKey{}, xerrors.Errorf("parse package clause: %w", err)
-		}
-		return packageKey{Dir: filepath.ToSlash(filepath.Dir(filePath)), Name: packageName}, nil
+		return packageKey{}, fmt.Errorf("parse package clause: %w", err)
 	}
 	return packageKey{Dir: filepath.ToSlash(filepath.Dir(filePath)), Name: snapshot.packageName}, nil
 }
@@ -137,7 +126,7 @@ func mergeSelection(ctx context.Context, cache *inventoryCache, revision string,
 
 	expanded, err := cache.directoryWideSelections(ctx, revision, selection.Key.Dir, selection.Files)
 	if err != nil {
-		return xerrors.Errorf("load directory-wide inventory for %s: %w", packagePattern(selection.Key.Dir), err)
+		return fmt.Errorf("load directory-wide inventory for %s: %w", packagePattern(selection.Key.Dir), err)
 	}
 	for _, expandedSelection := range expanded {
 		mergePackageSelection(selections, expandedSelection)
@@ -160,7 +149,7 @@ func mergePackageSelection(selections map[packageKey]*packageSelection, selectio
 	maps.Copy(merged.Tests, selection.Tests)
 }
 
-func selectTestsForSnapshots(change testFileChange, oldData, newData []byte, newInventory packageInventory, hunks []diffHunk) *packageSelection {
+func selectTestsFromHunks(change testFileChange, oldData, newData []byte, newInventory packageInventory, hunks []diffHunk) *packageSelection {
 	newSnapshot, err := parseFileSnapshot(newData)
 	if err != nil {
 		return allPackageTestsSelection(newInventory, change.displayPath())
@@ -221,7 +210,7 @@ func selectTestsForSnapshots(change testFileChange, oldData, newData []byte, new
 	}
 }
 
-func selectSourceRemovalForSnapshots(change testFileChange, oldData []byte, inventory packageInventory, hunks []diffHunk) *packageSelection {
+func selectSourceRemoval(change testFileChange, oldData []byte, inventory packageInventory, hunks []diffHunk) *packageSelection {
 	oldSnapshot, err := parseFileSnapshot(oldData)
 	if err != nil {
 		if needsOldSnapshot(hunks) {

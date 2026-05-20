@@ -1,9 +1,8 @@
 package main
 
 import (
+	"fmt"
 	"strings"
-
-	"golang.org/x/xerrors"
 )
 
 type diffRange struct {
@@ -12,12 +11,11 @@ type diffRange struct {
 }
 
 type runRequest struct {
-	RepoRoot        string
-	Range           diffRange
-	Prepare         []fetchSpec
-	MergeBaseRef    string
-	Sinks           outputSinks
-	OutputSizeLimit int
+	RepoRoot     string
+	Range        diffRange
+	Fetches      []fetchSpec
+	MergeBaseRef string
+	Sinks        outputSinks
 }
 
 type fetchSpec struct {
@@ -32,18 +30,20 @@ type outputSinks struct {
 	GitHubStepSummary string
 }
 
-func validateRevision(flagName, revision string) error {
+// validateRevisionArg rejects git revision strings that would be unsafe to pass
+// as a single argv element. It is not a SHA-format validator.
+func validateRevisionArg(name, revision string) error {
 	if revision == "" {
-		return xerrors.Errorf("%s is required", flagName)
+		return fmt.Errorf("%s is required", name)
 	}
 	if strings.HasPrefix(revision, "-") {
-		return xerrors.Errorf("%s must not start with '-': %q", flagName, revision)
+		return fmt.Errorf("%s must not start with '-': %q", name, revision)
 	}
 	if strings.Contains(revision, ":") {
-		return xerrors.Errorf("%s must not contain ':': %q", flagName, revision)
+		return fmt.Errorf("%s must not contain ':': %q", name, revision)
 	}
 	if strings.ContainsRune(revision, '\x00') {
-		return xerrors.Errorf("%s must not contain NUL bytes", flagName)
+		return fmt.Errorf("%s must not contain NUL bytes", name)
 	}
 	return nil
 }

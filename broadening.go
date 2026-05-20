@@ -9,24 +9,25 @@ const (
 )
 
 func broadeningScopeForOldHunk(decls []sharedDecl, candidate lineRange) broadeningScope {
-	for _, decl := range decls {
-		if decl.Range.overlaps(candidate) {
-			return decl.broadeningScope()
-		}
-	}
-	return broadeningNone
-}
-
-func broadeningScopeForNewHunk(decls []sharedDecl, oldSnapshot *fileSnapshot, candidate lineRange) broadeningScope {
+	scope := broadeningNone
 	for _, decl := range decls {
 		if !decl.Range.overlaps(candidate) {
 			continue
 		}
-		if scope := decl.broadeningScopeOnNewSide(oldSnapshot); scope != broadeningNone {
-			return scope
-		}
+		scope = max(scope, decl.broadeningScope())
 	}
-	return broadeningNone
+	return scope
+}
+
+func broadeningScopeForNewHunk(decls []sharedDecl, oldSnapshot *fileSnapshot, candidate lineRange) broadeningScope {
+	scope := broadeningNone
+	for _, decl := range decls {
+		if !decl.Range.overlaps(candidate) {
+			continue
+		}
+		scope = max(scope, decl.broadeningScopeOnNewSide(oldSnapshot))
+	}
+	return scope
 }
 
 func (decl sharedDecl) broadeningScope() broadeningScope {
@@ -43,6 +44,9 @@ func (decl sharedDecl) broadeningScope() broadeningScope {
 
 func (decl sharedDecl) broadeningScopeOnNewSide(oldSnapshot *fileSnapshot) broadeningScope {
 	switch decl.Kind {
+	// TODO: Decide whether new imports should narrow to tests that still
+	// reference package-local declarations. Today any import edit broadens
+	// the package.
 	case sharedDeclImport:
 		return broadeningPackage
 	case sharedDeclInit, sharedDeclTestMain:

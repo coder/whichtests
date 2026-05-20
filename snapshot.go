@@ -7,17 +7,10 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
-	"maps"
-	"regexp"
 	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
-)
-
-var (
-	packagePatternRE = regexp.MustCompile(`(?m)^package\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
-	fallbackTestRE   = regexp.MustCompile(`(?m)^func\s+((?:Test|Fuzz)[A-Z_][A-Za-z0-9_]*|Example(?:[A-Z_][A-Za-z0-9_]*)?)\s*\(`)
 )
 
 type fileSnapshot struct {
@@ -208,10 +201,13 @@ func isTopLevelExampleFunc(fn *ast.FuncDecl) bool {
 }
 
 func hasRunnableName(name *ast.Ident, prefix string, allowBare bool) bool {
-	if name == nil || !strings.HasPrefix(name.Name, prefix) {
+	if name == nil {
 		return false
 	}
-	rest := strings.TrimPrefix(name.Name, prefix)
+	rest, ok := strings.CutPrefix(name.Name, prefix)
+	if !ok {
+		return false
+	}
 	if rest == "" {
 		return allowBare
 	}
@@ -265,46 +261,6 @@ func pointerIdentName(expr ast.Expr) (string, bool) {
 		return "", false
 	}
 	return ident.Name, true
-}
-
-func fallbackPackageName(data []byte) (string, bool) {
-	matches := packagePatternRE.FindSubmatch(data)
-	if len(matches) < 2 {
-		return "", false
-	}
-	return string(matches[1]), true
-}
-
-func fallbackTestNames(data []byte) []string {
-	matches := fallbackTestRE.FindAllSubmatch(data, -1)
-	selected := map[string]struct{}{}
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		selected[string(match[1])] = struct{}{}
-	}
-	return slices.Sorted(maps.Keys(selected))
-}
-
-func parseOrFallbackSnapshot(data []byte) (fileSnapshot, error) {
-	snapshot, err := parseFileSnapshot(data)
-	if err == nil {
-		return snapshot, nil
-	}
-	packageName, ok := fallbackPackageName(data)
-	if !ok {
-		return fileSnapshot{}, err
-	}
-	fallback := fileSnapshot{
-		packageName: packageName,
-		tests:       map[string]lineRange{},
-		sharedKeys:  map[string]struct{}{},
-	}
-	for _, testName := range fallbackTestNames(data) {
-		fallback.tests[testName] = lineRange{}
-	}
-	return fallback, nil
 }
 
 func (snapshot *fileSnapshot) addSharedDecl(decl sharedDecl) {

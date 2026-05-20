@@ -26,14 +26,14 @@ func mustPackageInventory(t *testing.T, files map[string]string) packageInventor
 	const packageName = "sample"
 	inventory := packageInventory{
 		Key:   packageKey{Dir: "pkg", Name: packageName},
-		Tests: map[string][]testDecl{},
+		Tests: map[string]struct{}{},
 	}
-	for filePath, content := range files {
-		snapshot, err := parseOrFallbackSnapshot([]byte(content))
+	for _, content := range files {
+		snapshot, err := parseFileSnapshot([]byte(content))
 		require.NoError(t, err)
 		require.Equal(t, packageName, snapshot.packageName)
-		for testName, declRange := range snapshot.tests {
-			inventory.Tests[testName] = append(inventory.Tests[testName], testDecl{FilePath: filePath, Range: declRange})
+		for testName := range snapshot.tests {
+			inventory.Tests[testName] = struct{}{}
 		}
 	}
 	return inventory

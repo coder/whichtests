@@ -3,19 +3,19 @@ package main
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
-
-	"golang.org/x/xerrors"
 )
 
 var hunkHeaderPattern = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
 type changeKind string
 
+// changeKind mirrors git diff status letters. T is a type change.
 const (
 	changeAdded    changeKind = "A"
 	changeDeleted  changeKind = "D"
@@ -115,7 +115,7 @@ func listChangedTestFiles(ctx context.Context, cfg config, git gitRunner) ([]tes
 		switch kind {
 		case changeRenamed:
 			if index+1 >= len(fields) {
-				return nil, xerrors.Errorf("rename status %q is missing paths", status)
+				return nil, fmt.Errorf("rename status %q is missing paths", status)
 			}
 			oldPath := cleanGitPath(fields[index])
 			newPath := cleanGitPath(fields[index+1])
@@ -127,7 +127,7 @@ func listChangedTestFiles(ctx context.Context, cfg config, git gitRunner) ([]tes
 			changes = append(changes, change)
 		default:
 			if index >= len(fields) {
-				return nil, xerrors.Errorf("status %q is missing a path", status)
+				return nil, fmt.Errorf("status %q is missing a path", status)
 			}
 			path := cleanGitPath(fields[index])
 			index++
@@ -163,7 +163,7 @@ func parseChangeKind(status string) (changeKind, error) {
 	case strings.HasPrefix(status, string(changeType)):
 		return changeType, nil
 	default:
-		return "", xerrors.Errorf("unsupported diff status %q", status)
+		return "", fmt.Errorf("unsupported diff status %q", status)
 	}
 }
 
@@ -247,10 +247,10 @@ func parseRange(startText, countText string) (lineRange, error) {
 func parseNonNegativeInt(value string) (int, error) {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, xerrors.Errorf("parse integer %q: %w", value, err)
+		return 0, fmt.Errorf("parse integer %q: %w", value, err)
 	}
 	if parsed < 0 {
-		return 0, xerrors.Errorf("negative value %q", value)
+		return 0, fmt.Errorf("negative value %q", value)
 	}
 	return parsed, nil
 }
@@ -269,7 +269,7 @@ func readFileAtRevision(ctx context.Context, cfg config, git gitRunner, revision
 
 	result, err := git(ctx, cfg.RepoRoot, "show", revision+":"+filePath)
 	if err != nil {
-		return nil, false, xerrors.Errorf("read %s at %s: %w", filePath, revision, err)
+		return nil, false, fmt.Errorf("read %s at %s: %w", filePath, revision, err)
 	}
 	return []byte(result.Stdout), true, nil
 }
@@ -277,7 +277,7 @@ func readFileAtRevision(ctx context.Context, cfg config, git gitRunner, revision
 func fileExistsAtRevision(ctx context.Context, cfg config, git gitRunner, revision, filePath string) (bool, error) {
 	result, err := git(ctx, cfg.RepoRoot, "ls-tree", "-z", "--name-only", revision, "--", filePath)
 	if err != nil {
-		return false, xerrors.Errorf("check whether %s exists at %s: %w", filePath, revision, err)
+		return false, fmt.Errorf("check whether %s exists at %s: %w", filePath, revision, err)
 	}
 	cleanPath := cleanGitPath(filePath)
 	for part := range strings.SplitSeq(result.Stdout, "\x00") {

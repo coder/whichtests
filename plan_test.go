@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,11 +23,13 @@ func TestRenderSummaryNoRunnableTests(t *testing.T) {
 	require.Contains(t, summary, "pkg/changed_test.go")
 }
 
-func TestBuildRunRegexRejectsUnsafeNames(t *testing.T) {
+func TestRenderSummaryQuotesFilenames(t *testing.T) {
 	t.Parallel()
 
-	_, err := buildRunRegex([]string{"TestAlpha", "TestO'Brien"})
-	require.Error(t, err)
+	summary := renderSummary([]string{"pkg/with`tick_test.go", "pkg/with\nnewline_test.go"}, summaryReport{})
+	require.Contains(t, summary, `"pkg/with`+"`"+`tick_test.go"`)
+	require.Contains(t, summary, `"pkg/with\nnewline_test.go"`)
+	require.NotContains(t, summary, "pkg/with\nnewline_test.go")
 }
 
 func TestBuildExecutionPlanRunsAllForUnsafeTestNames(t *testing.T) {
@@ -58,6 +61,14 @@ func TestBuildExecutionPlanRejectsUnsafePackagePaths(t *testing.T) {
 		},
 	})
 	require.ErrorContains(t, err, "unsafe package path")
+}
+
+func TestBuildExecutionPlanRejectsPackageTraversalSegments(t *testing.T) {
+	t.Parallel()
+
+	for _, packagePath := range []string{"./foo/../bar", "./..", "./foo/.."} {
+		require.False(t, isSafePackagePattern(packagePath), packagePath)
+	}
 }
 
 func TestBuildExecutionPlanCapsBroadenedTarget(t *testing.T) {
@@ -97,9 +108,15 @@ func TestBuildExecutionPlanCapsMatrixTargets(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Matrix.Include, maxMatrixEntries)
 	overflow := result.Matrix.Include[len(result.Matrix.Include)-1]
-	require.Equal(t, "1", overflow.TestCount)
+	require.Equal(t, strings.Join([]string{
+		"./pkg19", "./pkg20", "./pkg21", "./pkg22", "./pkg23", "./pkg24", "./pkg25",
+		"./pkg26", "./pkg27", "./pkg28", "./pkg29", "./pkg30", "./pkg31",
+	}, " "), overflow.Package)
 	require.Empty(t, overflow.RunRegex)
-	require.Contains(t, overflow.Package, "./pkg")
+	require.Equal(t, "1", overflow.TestCount)
+	for _, packagePath := range strings.Fields(overflow.Package) {
+		require.True(t, isSafePackagePattern(packagePath), packagePath)
+	}
 	require.Contains(t, result.Summary.Notes[0], "Matrix target cap")
 	require.Contains(t, result.Summary.Entries[len(result.Summary.Entries)-1].Notes[1], "and 3 more")
 }

@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/xerrors"
 )
 
 type fakeGitRepo struct {
@@ -89,8 +89,7 @@ func (repo fakeGitRepo) catFileResponse(t *testing.T, args []string) (gitResult,
 	require.Len(t, args, 3)
 	require.Equal(t, "-e", args[1])
 	spec := args[2]
-	if strings.HasSuffix(spec, "^{commit}") {
-		revision := strings.TrimSuffix(spec, "^{commit}")
+	if revision, ok := strings.CutSuffix(spec, "^{commit}"); ok {
 		if _, ok := repo.revisions[revision]; ok {
 			return gitResult{}, nil
 		}
@@ -167,7 +166,7 @@ func splitRevisionPath(t *testing.T, spec string) (revision string, path string)
 }
 
 func gitFailure(exitCode int, stderr string) (gitResult, error) {
-	return gitResult{Stderr: stderr, ExitCode: exitCode}, xerrors.New(stderr)
+	return gitResult{Stderr: stderr, ExitCode: exitCode}, errors.New(stderr)
 }
 
 func gitKey(args ...string) string {

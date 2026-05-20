@@ -6,9 +6,8 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
-
-	"golang.org/x/xerrors"
 )
 
 var (
@@ -20,6 +19,9 @@ type matrixOutput struct {
 	Include []matrixEntry `json:"include"`
 }
 
+// matrixEntry.Package is a single safe package token except for overflow rows,
+// where it is a space-separated list of safe package tokens consumed by the
+// flake-go workflow.
 type matrixEntry struct {
 	Package   string `json:"package"`
 	RunRegex  string `json:"run_regex,omitempty"`
@@ -84,8 +86,8 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 	accumulators := map[string]*executionAccumulator{}
 	for key, selection := range selections {
 		packagePath := packagePattern(key.Dir)
-		if !safePackagePatternRE.MatchString(packagePath) {
-			return buildResult{}, xerrors.Errorf("unsafe package path %q", packagePath)
+		if !isSafePackagePattern(packagePath) {
+			return buildResult{}, fmt.Errorf("unsafe package path %q", packagePath)
 		}
 		entry := accumulators[packagePath]
 		if entry == nil {
@@ -93,7 +95,7 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 				Package:   packagePath,
 				Files:     map[string]struct{}{},
 				Tests:     map[string]struct{}{},
-				TestCount: defaultTargetCount,
+				TestCount: defaultTestCount,
 			}
 			accumulators[packagePath] = entry
 		}
@@ -110,21 +112,17 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 		files := slices.Sorted(maps.Keys(entry.Files))
 		if entry.Broadened && len(tests) > maxBroadenedTests {
 			entry.RunAll = true
-			entry.TestCount = runOnceTargetCount
+			entry.TestCount = runOnceTestCount
 			entry.Notes = appendUniqueNote(entry.Notes, fmt.Sprintf("Package-wide broadening selected %d tests, above the %d-test cap, so this target will run all tests once.", len(tests), maxBroadenedTests))
 		}
 		if unsafeTestNames := unsafeRunRegexTestNames(tests); len(unsafeTestNames) > 0 {
 			entry.RunAll = true
-			entry.TestCount = runOnceTargetCount
+			entry.TestCount = runOnceTestCount
 			entry.Notes = appendUniqueNote(entry.Notes, fmt.Sprintf("Selected %d test names that cannot be passed safely through RUN, so this target will run all tests once.", len(unsafeTestNames)))
 		}
 		runRegex := ""
 		if !entry.RunAll {
-			var err error
-			runRegex, err = buildRunRegex(tests)
-			if err != nil {
-				return buildResult{}, xerrors.Errorf("build run regex for %s: %w", packagePath, err)
-			}
+			runRegex = buildRunRegex(tests)
 		}
 		result.Matrix.Include = append(result.Matrix.Include, matrixEntry{
 			Package:   packagePath,
@@ -157,14 +155,14 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 		result.Matrix.Include = result.Matrix.Include[:keep]
 		result.Matrix.Include = append(result.Matrix.Include, matrixEntry{
 			Package:   strings.Join(overflowPackages, " "),
-			TestCount: runOnceTargetCount,
+			TestCount: runOnceTestCount,
 		})
 		result.Summary.Entries = result.Summary.Entries[:keep]
 		result.Summary.Entries = append(result.Summary.Entries, summaryEntry{
 			Label:     fmt.Sprintf("overflow target (%d packages)", len(overflowPackages)),
 			Files:     slices.Sorted(maps.Keys(overflowFiles)),
 			RunAll:    true,
-			TestCount: runOnceTargetCount,
+			TestCount: runOnceTestCount,
 			Notes: []string{
 				note,
 				summarizePackages(overflowPackages),
@@ -199,6 +197,25 @@ func appendUniqueNote(notes []string, note string) []string {
 	return append(notes, note)
 }
 
+func isSafePackagePattern(packagePath string) bool {
+	if !safePackagePatternRE.MatchString(packagePath) {
+		return false
+	}
+	if packagePath == "." {
+		return true
+	}
+	trimmed, ok := strings.CutPrefix(packagePath, "./")
+	if !ok {
+		return false
+	}
+	for segment := range strings.SplitSeq(trimmed, "/") {
+		if segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 func unsafeRunRegexTestNames(tests []string) []string {
 	unsafeNames := make([]string, 0)
 	for _, testName := range tests {
@@ -209,15 +226,12 @@ func unsafeRunRegexTestNames(tests []string) []string {
 	return unsafeNames
 }
 
-func buildRunRegex(tests []string) (string, error) {
+func buildRunRegex(tests []string) string {
 	quoted := make([]string, 0, len(tests))
 	for _, testName := range tests {
-		if !safeTestNameRE.MatchString(testName) {
-			return "", xerrors.Errorf("unsafe test name %q", testName)
-		}
 		quoted = append(quoted, regexp.QuoteMeta(testName))
 	}
-	return "^(" + strings.Join(quoted, "|") + ")(/.*)?$", nil
+	return "^(" + strings.Join(quoted, "|") + ")(/.*)?$"
 }
 
 func renderSummary(changedFiles []string, summary summaryReport) string {
@@ -231,7 +245,7 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 		_, _ = builder.WriteString("Changed `*_test.go` files were detected, but no runnable top-level tests were selected.\n\n")
 		_, _ = builder.WriteString("Files:\n")
 		for _, filePath := range changedFiles {
-			_, _ = builder.WriteString("- `" + filePath + "`\n")
+			_, _ = builder.WriteString("- " + renderSummaryFilePath(filePath) + "\n")
 		}
 		return builder.String()
 	}
@@ -252,7 +266,7 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 		_, _ = builder.WriteString("### `" + entry.Label + "`\n\n")
 		_, _ = builder.WriteString("Files:\n")
 		for _, filePath := range entry.Files {
-			_, _ = builder.WriteString("- `" + filePath + "`\n")
+			_, _ = builder.WriteString("- " + renderSummaryFilePath(filePath) + "\n")
 		}
 		if len(entry.Notes) > 0 {
 			_, _ = builder.WriteString("\nNotes:\n")
@@ -278,6 +292,10 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 		_, _ = builder.WriteString("\n")
 	}
 	return builder.String()
+}
+
+func renderSummaryFilePath(filePath string) string {
+	return strconv.QuoteToASCII(filePath)
 }
 
 func countDescription(count string) string {

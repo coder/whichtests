@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -10,8 +11,6 @@ import (
 )
 
 func TestGitHubActionsRunRequestPullRequest(t *testing.T) {
-	t.Parallel()
-
 	eventPath := writeGitHubEvent(t, `{
 		"pull_request": {
 			"base": {
@@ -23,16 +22,14 @@ func TestGitHubActionsRunRequestPullRequest(t *testing.T) {
 		},
 		"ignored": true
 	}`)
+	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+	t.Setenv("GITHUB_OUTPUT", "output.txt")
+	t.Setenv("GITHUB_STEP_SUMMARY", "summary.md")
+	t.Setenv("UNRELATED_EXTRA_ENV", "ignored")
+
 	req, err := githubActionsRunRequest(t.Context(), commandConfig{
 		config: config{RepoRoot: "/repo", OutMatrix: "matrix.json"},
-		Env: map[string]string{
-			"GITHUB_EVENT_NAME":   "pull_request",
-			"GITHUB_EVENT_PATH":   eventPath,
-			"GITHUB_OUTPUT":       "output.txt",
-			"GITHUB_REPOSITORY":   "coder/coder",
-			"GITHUB_STEP_SUMMARY": "summary.md",
-			"UNRELATED_EXTRA_ENV": "ignored",
-		},
 	}, fakeGitRepo{headSHA: "head123"}.runner(t))
 	require.NoError(t, err)
 	require.Equal(t, "/repo", req.RepoRoot)
@@ -40,15 +37,13 @@ func TestGitHubActionsRunRequestPullRequest(t *testing.T) {
 	require.Equal(t, []fetchSpec{
 		{Remote: "https://github.com/coder/coder.git", Ref: "refs/heads/main"},
 		{Remote: "https://github.com/coder/coder.git", Ref: "base123"},
-	}, req.Prepare)
+	}, req.Fetches)
 	require.Equal(t, "matrix.json", req.Sinks.OutMatrix)
 	require.Equal(t, "output.txt", req.Sinks.GitHubOutput)
 	require.Equal(t, "summary.md", req.Sinks.GitHubStepSummary)
 }
 
 func TestGitHubActionsRunRequestVerifiesPullRequestHead(t *testing.T) {
-	t.Parallel()
-
 	eventPath := writeGitHubEvent(t, `{
 		"pull_request": {
 			"base": {
@@ -59,43 +54,137 @@ func TestGitHubActionsRunRequestVerifiesPullRequestHead(t *testing.T) {
 			"head": {"sha": "expected-head"}
 		}
 	}`)
+	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+	t.Setenv("GITHUB_OUTPUT", "output.txt")
+
 	_, err := githubActionsRunRequest(t.Context(), commandConfig{
 		config: config{RepoRoot: "/repo", OutMatrix: "matrix.json"},
-		Env: map[string]string{
-			"GITHUB_EVENT_NAME": "pull_request",
-			"GITHUB_EVENT_PATH": eventPath,
-			"GITHUB_OUTPUT":     "output.txt",
-			"GITHUB_REPOSITORY": "coder/coder",
-		},
 	}, fakeGitRepo{headSHA: "actual-head"}.runner(t))
 	require.ErrorContains(t, err, "checked out HEAD actual-head does not match pull_request.head.sha expected-head")
 }
 
-func TestGitHubActionsRunRequestWorkflowDispatchExplicitRange(t *testing.T) {
-	t.Parallel()
+func TestGitHubActionsRunRequestRequiresPullRequestHead(t *testing.T) {
+	eventPath := writeGitHubEvent(t, `{
+		"pull_request": {
+			"base": {
+				"sha": "base123",
+				"ref": "main",
+				"repo": {"full_name": "coder/coder"}
+			},
+			"head": {"sha": ""}
+		}
+	}`)
+	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+	t.Setenv("GITHUB_OUTPUT", "output.txt")
 
+	_, err := githubActionsRunRequest(t.Context(), commandConfig{
+		config: config{RepoRoot: "/repo", OutMatrix: "matrix.json"},
+	}, fakeGitRepo{headSHA: "head123"}.runner(t))
+	require.ErrorContains(t, err, "pull_request.head.sha is required")
+}
+
+func TestGitHubActionsRunRequestWorkflowDispatchExplicitRange(t *testing.T) {
 	eventPath := writeGitHubEvent(t, `{
 		"inputs": {
 			"base_sha": "base123",
 			"head_sha": "head123"
 		}
 	}`)
+	t.Setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+	t.Setenv("GITHUB_OUTPUT", "output.txt")
+
 	req, err := githubActionsRunRequest(t.Context(), commandConfig{
 		config: config{RepoRoot: "/repo", OutMatrix: "matrix.json"},
-		Env: map[string]string{
-			"GITHUB_EVENT_NAME": "workflow_dispatch",
-			"GITHUB_EVENT_PATH": eventPath,
-			"GITHUB_OUTPUT":     "output.txt",
-			"GITHUB_REPOSITORY": "coder/coder",
-		},
 	}, fakeGitRepo{headSHA: "head123"}.runner(t))
 	require.NoError(t, err)
 	require.Equal(t, diffRange{BaseSHA: "base123", HeadSHA: "head123"}, req.Range)
 	require.Equal(t, []fetchSpec{
 		{Remote: "origin", Ref: "refs/heads/main:refs/remotes/origin/main"},
 		{Remote: "origin", Ref: "base123"},
-	}, req.Prepare)
+	}, req.Fetches)
 	require.Empty(t, req.MergeBaseRef)
+}
+
+func TestRunCommandGitHubActionsWritesOutputs(t *testing.T) {
+	oldContent := `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("old")
+}
+`
+	newContent := `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("new")
+}
+`
+	rangeForAlpha := singleLineRange(t, newContent, `t.Log("new")`)
+	repo := fakeGitRepo{
+		headSHA: "head123",
+		changes: []testFileChange{{
+			Kind:    changeModified,
+			OldPath: "pkg/sample_test.go",
+			NewPath: "pkg/sample_test.go",
+		}},
+		revisions: map[string]map[string]string{
+			"base123": {"pkg/sample_test.go": oldContent},
+			"head123": {"pkg/sample_test.go": newContent},
+		},
+		diffOutputs: map[string]string{
+			"pkg/sample_test.go": diffForChange(rangeForAlpha, rangeForAlpha),
+		},
+	}
+	tmpDir := t.TempDir()
+	eventPath := writeGitHubEvent(t, `{
+		"pull_request": {
+			"base": {
+				"sha": "base123",
+				"ref": "main",
+				"repo": {"full_name": "coder/coder"}
+			},
+			"head": {"sha": "head123"}
+		}
+	}`)
+	outputPath := filepath.Join(tmpDir, "github-output.txt")
+	stepSummaryPath := filepath.Join(tmpDir, "step-summary.md")
+	localSummaryPath := filepath.Join(tmpDir, "summary.md")
+	matrixPath := filepath.Join(tmpDir, "matrix.json")
+	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+	t.Setenv("GITHUB_OUTPUT", outputPath)
+	t.Setenv("GITHUB_STEP_SUMMARY", stepSummaryPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	fetch := func(context.Context, string, fetchSpec) (gitResult, error) {
+		t.Fatal("unexpected fetch")
+		return gitResult{}, nil
+	}
+	err := runCommand(t.Context(), commandConfig{
+		config:        config{RepoRoot: "/repo", OutMatrix: matrixPath, OutSummary: localSummaryPath},
+		GitHubActions: true,
+	}, &stdout, &stderr, repo.runner(t), fetch)
+	require.NoError(t, err)
+
+	matrixData, err := os.ReadFile(matrixPath)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"include":[{"package":"./pkg","run_regex":"^(TestAlpha)(/.*)?$","test_count":"10"}]}`, string(matrixData))
+	outputData, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	require.Equal(t, "matrix="+string(bytes.TrimSpace(matrixData))+"\n", string(outputData))
+	stepSummary, err := os.ReadFile(stepSummaryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(stepSummary), `"pkg/sample_test.go"`)
+	require.Contains(t, string(stepSummary), "TestAlpha")
+	require.Empty(t, stdout.String())
+	require.Contains(t, stderr.String(), "selected 1 package targets")
 }
 
 func TestEnsureRangeAvailableWorkflowDispatchDefaultBase(t *testing.T) {
@@ -104,7 +193,7 @@ func TestEnsureRangeAvailableWorkflowDispatchDefaultBase(t *testing.T) {
 	req := runRequest{
 		RepoRoot:     "/repo",
 		Range:        diffRange{HeadSHA: "head123"},
-		Prepare:      []fetchSpec{{Remote: "origin", Ref: "refs/heads/main:refs/remotes/origin/main"}},
+		Fetches:      []fetchSpec{{Remote: "origin", Ref: "refs/heads/main:refs/remotes/origin/main"}},
 		MergeBaseRef: "origin/main",
 	}
 	repo := fakeGitRepo{
@@ -133,7 +222,7 @@ func TestEnsureRangeAvailableFetchesLazily(t *testing.T) {
 	req := runRequest{
 		RepoRoot: "/repo",
 		Range:    diffRange{BaseSHA: "base123", HeadSHA: "head123"},
-		Prepare:  []fetchSpec{{Remote: "https://github.com/coder/coder.git", Ref: "refs/heads/main"}},
+		Fetches:  []fetchSpec{{Remote: "https://github.com/coder/coder.git", Ref: "refs/heads/main"}},
 	}
 	repo := fakeGitRepo{revisions: map[string]map[string]string{"base123": {}, "head123": {}}}
 	fetch := func(_ context.Context, _ string, spec fetchSpec) (gitResult, error) {
@@ -149,7 +238,7 @@ func TestEnsureRangeAvailableFetchesWhenMergeBaseIsMissing(t *testing.T) {
 	req := runRequest{
 		RepoRoot: "/repo",
 		Range:    diffRange{BaseSHA: "base123", HeadSHA: "head123"},
-		Prepare: []fetchSpec{
+		Fetches: []fetchSpec{
 			{Remote: "https://github.com/coder/coder.git", Ref: "refs/heads/main"},
 			{Remote: "https://github.com/coder/coder.git", Ref: "base123"},
 		},
@@ -170,12 +259,10 @@ func TestEnsureRangeAvailableFetchesWhenMergeBaseIsMissing(t *testing.T) {
 	}
 	require.NoError(t, ensureRangeAvailable(t.Context(), &req, git, fetch))
 	require.Equal(t, 2, mergeBaseCalls)
-	require.Equal(t, req.Prepare[:1], fetches)
+	require.Equal(t, req.Fetches[:1], fetches)
 }
 
 func TestGitHubActionsRunRequestValidatesInputsBeforeFetch(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name      string
 		eventName string
@@ -210,17 +297,13 @@ func TestGitHubActionsRunRequestValidatesInputsBeforeFetch(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			eventPath := writeGitHubEvent(t, tc.eventJSON)
+			t.Setenv("GITHUB_EVENT_NAME", tc.eventName)
+			t.Setenv("GITHUB_EVENT_PATH", eventPath)
+			t.Setenv("GITHUB_OUTPUT", "output.txt")
+
 			_, err := githubActionsRunRequest(t.Context(), commandConfig{
 				config: config{RepoRoot: "/repo", OutMatrix: "matrix.json"},
-				Env: map[string]string{
-					"GITHUB_EVENT_NAME": tc.eventName,
-					"GITHUB_EVENT_PATH": eventPath,
-					"GITHUB_OUTPUT":     "output.txt",
-					"GITHUB_REPOSITORY": "coder/coder",
-				},
 			}, fakeGitRepo{headSHA: "head123"}.runner(t))
 			require.ErrorContains(t, err, tc.want)
 		})

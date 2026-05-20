@@ -3,12 +3,11 @@ package main
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"golang.org/x/xerrors"
 )
 
 type inventoryCache struct {
@@ -39,7 +38,7 @@ func (cache *inventoryCache) loadPackageInventory(ctx context.Context, revision 
 	}
 	inventory := packageInventory{
 		Key:   key,
-		Tests: map[string][]testDecl{},
+		Tests: map[string]struct{}{},
 	}
 	for _, filePath := range files {
 		data, exists, err := readFileAtRevision(ctx, cache.cfg, cache.git, revision, filePath)
@@ -49,15 +48,15 @@ func (cache *inventoryCache) loadPackageInventory(ctx context.Context, revision 
 		if !exists {
 			continue
 		}
-		snapshot, err := parseOrFallbackSnapshot(data)
+		snapshot, err := parseFileSnapshot(data)
 		if err != nil {
-			return packageInventory{}, xerrors.Errorf("parse %s at %s: %w", filePath, revision, err)
+			return packageInventory{}, fmt.Errorf("parse %s at %s: %w", filePath, revision, err)
 		}
 		if snapshot.packageName != key.Name {
 			continue
 		}
-		for testName, declRange := range snapshot.tests {
-			inventory.Tests[testName] = append(inventory.Tests[testName], testDecl{FilePath: filePath, Range: declRange})
+		for testName := range snapshot.tests {
+			inventory.Tests[testName] = struct{}{}
 		}
 	}
 	cache.packages[cacheKey] = inventory
@@ -127,9 +126,9 @@ func (cache *inventoryCache) loadDirectoryInventories(ctx context.Context, revis
 		if !exists {
 			continue
 		}
-		snapshot, err := parseOrFallbackSnapshot(data)
+		snapshot, err := parseFileSnapshot(data)
 		if err != nil {
-			return nil, xerrors.Errorf("parse %s at %s: %w", filePath, revision, err)
+			return nil, fmt.Errorf("parse %s at %s: %w", filePath, revision, err)
 		}
 		packageNames[snapshot.packageName] = struct{}{}
 	}

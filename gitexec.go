@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-
-	"golang.org/x/xerrors"
 )
 
 type gitResult struct {
@@ -24,7 +23,7 @@ type gitFetcher func(ctx context.Context, dir string, spec fetchSpec) (gitResult
 func ensureRevisionExists(ctx context.Context, cfg config, git gitRunner, revision string) error {
 	_, err := git(ctx, cfg.RepoRoot, "cat-file", "-e", revision+"^{commit}")
 	if err != nil {
-		return xerrors.Errorf("revision %s is not available: %w", revision, err)
+		return fmt.Errorf("revision %s is not available: %w", revision, err)
 	}
 	return nil
 }
@@ -53,12 +52,12 @@ func execGit(ctx context.Context, dir string, args ...string) (gitResult, error)
 		message = strings.TrimSpace(result.Stdout)
 	}
 	if strings.Contains(message, "no merge base") {
-		return result, xerrors.Errorf("git %s: %s. Ensure both revisions have full history before diffing %q", strings.Join(args, " "), message, args[len(args)-1])
+		return result, fmt.Errorf("git %s: %s. Ensure both revisions have full history before diffing %q", strings.Join(args, " "), message, args[len(args)-1])
 	}
 	if message == "" {
 		message = err.Error()
 	}
-	return result, xerrors.Errorf("git %s: %s", strings.Join(args, " "), message)
+	return result, fmt.Errorf("git %s: %s", strings.Join(args, " "), message)
 }
 
 func exitCode(err error) int {

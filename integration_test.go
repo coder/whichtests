@@ -38,7 +38,7 @@ func TestAdded(t *testing.T) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: baseSHA, HeadSHA: headSHA, OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, execGit)
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: baseSHA, HeadSHA: headSHA, OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, execGit, nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -89,7 +89,7 @@ func TestAlpha(t *testing.T) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: baseSHA, HeadSHA: headSHA, OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, execGit)
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: baseSHA, HeadSHA: headSHA, OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, execGit, nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -158,8 +158,8 @@ func TestAlpha(t *testing.T) {
 	req := runRequest{
 		RepoRoot: cloneRoot,
 		Range:    diffRange{BaseSHA: baseSHA, HeadSHA: headSHA},
-		Prepare: []fetchSpec{
-			{Remote: "origin", Ref: remoteTrackingFetchRef(defaultDispatchBaseRef)},
+		Fetches: []fetchSpec{
+			{Remote: "origin", Ref: remoteTrackingRefspec(defaultDispatchBaseRef)},
 			{Remote: "origin", Ref: baseSHA},
 		},
 	}

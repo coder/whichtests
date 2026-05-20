@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/xerrors"
 )
 
 func TestRunValidationErrors(t *testing.T) {
@@ -18,22 +18,22 @@ func TestRunValidationErrors(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	neverGit := func(_ context.Context, _ string, _ ...string) (gitResult, error) {
-		return gitResult{}, xerrors.New("git should not be called")
+		return gitResult{}, errors.New("git should not be called")
 	}
 
-	err := run(t.Context(), config{OutMatrix: "matrix.json"}, &stdout, &stderr, neverGit)
+	err := runCommand(t.Context(), commandConfig{config: config{OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
 	require.EqualError(t, err, "--base-sha is required")
 
-	err = run(t.Context(), config{BaseSHA: "base"}, &stdout, &stderr, neverGit)
+	err = runCommand(t.Context(), commandConfig{config: config{BaseSHA: "base"}}, &stdout, &stderr, neverGit, nil)
 	require.EqualError(t, err, "--out-matrix is required")
 
-	err = run(t.Context(), config{BaseSHA: "-bad", OutMatrix: "matrix.json"}, &stdout, &stderr, neverGit)
+	err = runCommand(t.Context(), commandConfig{config: config{BaseSHA: "-bad", OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
 	require.ErrorContains(t, err, "must not start with '-'")
 
-	err = run(t.Context(), config{BaseSHA: "base:bad", OutMatrix: "matrix.json"}, &stdout, &stderr, neverGit)
+	err = runCommand(t.Context(), commandConfig{config: config{BaseSHA: "base:bad", OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
 	require.ErrorContains(t, err, "must not contain ':'")
 
-	err = run(t.Context(), config{BaseSHA: "base\x00bad", OutMatrix: "matrix.json"}, &stdout, &stderr, neverGit)
+	err = runCommand(t.Context(), commandConfig{config: config{BaseSHA: "base\x00bad", OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
 	require.ErrorContains(t, err, "must not contain NUL bytes")
 }
 
@@ -99,7 +99,7 @@ func TestShared(t *testing.T) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 	require.Empty(t, stdout.String())
 	require.Contains(t, stderr.String(), "selected 2 package targets")
@@ -159,7 +159,7 @@ func TestAlpha(t *testing.T) {
 	matrixPath := filepath.Join(repoRoot, "matrix.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: "-"}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: "-"}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 	require.Contains(t, stdout.String(), "## Go test flake detector selection")
 	require.Contains(t, stdout.String(), "### `./pkg`")
@@ -231,7 +231,7 @@ func TestMain(m *testing.M) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -289,7 +289,7 @@ func TestRenamed(t *testing.T) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -352,7 +352,7 @@ func TestHead(t *testing.T) {
 	matrixPath := filepath.Join(repoRoot, "matrix.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -408,7 +408,7 @@ func TestHiddenIgnored(t *testing.T) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -477,7 +477,7 @@ func TestPlatform(t *testing.T) {
 	matrixPath := filepath.Join(repoRoot, "matrix.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -531,7 +531,7 @@ func TestAlpha(t *testing.T) {
 	summaryPath := filepath.Join(repoRoot, "summary.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath, OutSummary: summaryPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -600,7 +600,7 @@ func init() {
 	matrixPath := filepath.Join(repoRoot, "matrix.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -660,7 +660,7 @@ func TestMoved(t *testing.T) {
 	matrixPath := filepath.Join(repoRoot, "matrix.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput
@@ -731,7 +731,7 @@ func TestNewStable(t *testing.T) {
 	matrixPath := filepath.Join(repoRoot, "matrix.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(t.Context(), config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}, &stdout, &stderr, repo.runner(t))
+	err := runCommand(t.Context(), commandConfig{config: config{RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head", OutMatrix: matrixPath}}, &stdout, &stderr, repo.runner(t), nil)
 	require.NoError(t, err)
 
 	var matrix matrixOutput

@@ -26,21 +26,3 @@ func Examplefoo() {}
 	require.NoError(t, err)
 	require.Equal(t, []string{"Example", "ExampleFoo", "FuzzAlpha", "TestAlpha"}, slices.Sorted(maps.Keys(snapshot.tests)))
 }
-
-func TestFallbackTestNamesRejectsLowercaseSuffixes(t *testing.T) {
-	t.Parallel()
-
-	data := []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {}
-func Testify(t *testing.T) {}
-func FuzzAlpha(f *testing.F) {}
-func Fuzzbar(f *testing.F) {}
-func Example() {}
-func ExampleFoo() {}
-func Examplefoo() {}
-`)
-	require.Equal(t, []string{"Example", "ExampleFoo", "FuzzAlpha", "TestAlpha"}, fallbackTestNames(data))
-}
