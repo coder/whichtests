@@ -39,6 +39,22 @@ func mustPackageInventory(t *testing.T, files map[string]string) packageInventor
 	return inventory
 }
 
+func mustFileSnapshot(t *testing.T, data []byte) fileSnapshot {
+	t.Helper()
+	snapshot, err := parseFileSnapshot(data)
+	require.NoError(t, err)
+	return snapshot
+}
+
+func mustOptionalFileSnapshot(t *testing.T, data []byte) *fileSnapshot {
+	t.Helper()
+	if data == nil {
+		return nil
+	}
+	snapshot := mustFileSnapshot(t, data)
+	return &snapshot
+}
+
 func diffForChange(oldRange, newRange lineRange) string {
 	return fmt.Sprintf("@@ -%s +%s @@\n", formatDiffRange(oldRange), formatDiffRange(newRange))
 }

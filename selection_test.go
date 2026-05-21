@@ -13,14 +13,15 @@ func TestSelectTestsForSnapshots(t *testing.T) {
 	change := testFileChange{Kind: changeModified, OldPath: changedPath, NewPath: changedPath}
 
 	tests := []struct {
-		name            string
-		oldData         []byte
-		newData         []byte
-		inventory       packageInventory
-		hunks           []diffHunk
-		wantTests       []string
-		wantBroadened   bool
-		wantNoSelection bool
+		name              string
+		oldData           []byte
+		newData           []byte
+		inventory         packageInventory
+		hunks             []diffHunk
+		wantTests         []string
+		wantBroadened     bool
+		wantDirectoryWide bool
+		wantNoSelection   bool
 	}{
 		{
 			name: "body change selects only changed test",
@@ -605,8 +606,7 @@ func TestMain(m *testing.M) {
 }
 `, `fmt.Println("setup")`),
 			}},
-			wantTests:     []string{"TestAlpha"},
-			wantBroadened: true,
+			wantDirectoryWide: true,
 		},
 		{
 			name: "init broadens across sibling files in same package",
@@ -662,61 +662,7 @@ func init() {
 }
 `, `register("after")`),
 			}},
-			wantTests:     []string{"TestAlpha"},
-			wantBroadened: true,
-		},
-		{
-			name: "malformed changed file broadens package conservatively",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("before alpha")
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("changed alpha")
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`),
-			inventory: packageInventory{
-				Key: packageKey{Dir: "pkg", Name: "sample"},
-				Tests: map[string]struct{}{
-					"TestAlpha": {},
-					"TestBeta":  {},
-					"TestGamma": {},
-				},
-			},
-			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("before alpha")
-}
-`, `t.Log("before alpha")`),
-				New: singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("changed alpha")
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`, `t.Log("changed alpha")`),
-			}},
-			wantTests:     []string{"TestAlpha", "TestBeta", "TestGamma"},
-			wantBroadened: true,
+			wantDirectoryWide: true,
 		},
 		{
 			name: "deleted helper uses old snapshot to broaden package",
@@ -898,13 +844,21 @@ func TestAlpha(t *T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			selection := selectTestsFromHunks(change, tt.oldData, tt.newData, tt.inventory, tt.hunks)
+			oldSnapshot := mustOptionalFileSnapshot(t, tt.oldData)
+			newSnapshot := mustFileSnapshot(t, tt.newData)
+			selection := selectTestsFromHunks(change, oldSnapshot, newSnapshot, tt.inventory, tt.hunks)
 			if tt.wantNoSelection {
 				require.Nil(t, selection)
 				return
 			}
 			require.NotNil(t, selection)
-			require.Equal(t, tt.wantTests, selectionNames(selection))
+			require.Equal(t, tt.wantDirectoryWide, selection.DirectoryWide)
+			if tt.wantDirectoryWide {
+				require.Empty(t, selection.Tests)
+				require.Contains(t, selection.Files, changedPath)
+			} else {
+				require.Equal(t, tt.wantTests, selectionNames(selection))
+			}
 			require.Equal(t, tt.wantBroadened, selection.Broadened)
 		})
 	}
@@ -953,7 +907,9 @@ func TestBeta(t *testing.T) {
 }
 `,
 	})
-	selection := selectTestsFromHunks(change, oldData, newData, inventory, []diffHunk{{
+	oldSnapshot := mustOptionalFileSnapshot(t, oldData)
+	newSnapshot := mustFileSnapshot(t, newData)
+	selection := selectTestsFromHunks(change, oldSnapshot, newSnapshot, inventory, []diffHunk{{
 		Old: singleLineRange(t, string(oldData), `t.Log("before method")`),
 		New: singleLineRange(t, string(newData), `t.Log("changed method")`),
 	}})
@@ -996,7 +952,9 @@ func TestBeta(t *testing.T) {
 			inventory := mustPackageInventory(t, map[string]string{
 				"pkg/changed_test.go": string(newData),
 			})
-			selection := selectTestsFromHunks(change, oldData, newData, inventory, []diffHunk{{
+			oldSnapshot := mustOptionalFileSnapshot(t, oldData)
+			newSnapshot := mustFileSnapshot(t, newData)
+			selection := selectTestsFromHunks(change, oldSnapshot, newSnapshot, inventory, []diffHunk{{
 				Old: emptyRangeAt(7),
 				New: rangeSpan(
 					singleLineRange(t, string(newData), tt.needle),
@@ -1044,7 +1002,9 @@ func TestBeta(t *testing.T) {
 }
 `,
 	})
-	selection := selectTestsFromHunks(change, oldData, newData, inventory, []diffHunk{{
+	oldSnapshot := mustOptionalFileSnapshot(t, oldData)
+	newSnapshot := mustFileSnapshot(t, newData)
+	selection := selectTestsFromHunks(change, oldSnapshot, newSnapshot, inventory, []diffHunk{{
 		Old: emptyRangeAt(3),
 		New: singleLineRange(t, string(newData), `_ "example.com/sideeffect"`),
 	}})

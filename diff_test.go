@@ -60,7 +60,7 @@ func TestReadFileAtRevisionPropagatesExistenceCheckFailures(t *testing.T) {
 		},
 		failures: map[string]gitResponse{
 			gitKey("ls-tree", "-z", "--name-only", "head", "--", "pkg/sample_test.go"): {
-				result: gitResult{Stderr: "fatal: ls-tree failed", ExitCode: 128},
+				result: gitResult{},
 				err:    errors.New("fatal: ls-tree failed"),
 			},
 		},

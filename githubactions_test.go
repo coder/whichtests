@@ -248,7 +248,7 @@ func TestEnsureRangeAvailableFetchesWhenMergeBaseIsMissing(t *testing.T) {
 		require.Equal(t, []string{"merge-base", "base123", "head123"}, args)
 		mergeBaseCalls++
 		if mergeBaseCalls == 1 {
-			return gitFailure(1, "fatal: no merge base")
+			return gitFailure("fatal: no merge base")
 		}
 		return gitResult{Stdout: "base123\n"}, nil
 	}

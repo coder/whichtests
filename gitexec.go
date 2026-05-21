@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,9 +10,7 @@ import (
 )
 
 type gitResult struct {
-	Stdout   string
-	Stderr   string
-	ExitCode int
+	Stdout string
 }
 
 type gitRunner func(ctx context.Context, dir string, args ...string) (gitResult, error)
@@ -38,16 +35,11 @@ func execGit(ctx context.Context, dir string, args ...string) (gitResult, error)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	result := gitResult{
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-		ExitCode: 0,
-	}
+	result := gitResult{Stdout: stdout.String()}
 	if err == nil {
 		return result, nil
 	}
-	result.ExitCode = exitCode(err)
-	message := strings.TrimSpace(result.Stderr)
+	message := strings.TrimSpace(stderr.String())
 	if message == "" {
 		message = strings.TrimSpace(result.Stdout)
 	}
@@ -58,11 +50,4 @@ func execGit(ctx context.Context, dir string, args ...string) (gitResult, error)
 		message = err.Error()
 	}
 	return result, fmt.Errorf("git %s: %s", strings.Join(args, " "), message)
-}
-
-func exitCode(err error) int {
-	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		return exitErr.ExitCode()
-	}
-	return -1
 }

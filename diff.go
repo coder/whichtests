@@ -34,17 +34,15 @@ func (change testFileChange) displayPath() string {
 	return cmp.Or(change.NewPath, change.OldPath)
 }
 
-func (change testFileChange) oldRevisionPath() string {
-	return cmp.Or(change.OldPath, change.NewPath)
-}
-
-func (change testFileChange) newRevisionPath() string {
-	return cmp.Or(change.NewPath, change.OldPath)
-}
-
 func (change testFileChange) pathspecs() []string {
-	oldPath := change.oldRevisionPath()
-	newPath := change.newRevisionPath()
+	oldPath := change.OldPath
+	if oldPath == "" {
+		oldPath = change.NewPath
+	}
+	newPath := change.NewPath
+	if newPath == "" {
+		newPath = change.OldPath
+	}
 	if oldPath == "" {
 		return []string{newPath}
 	}
@@ -172,10 +170,9 @@ func cleanGitPath(path string) string {
 }
 
 func isRunnableTestFilePath(path string) bool {
-	return strings.HasSuffix(path, "_test.go") && isRunnableGoTestPath(path)
-}
-
-func isRunnableGoTestPath(path string) bool {
+	if !strings.HasSuffix(path, "_test.go") {
+		return false
+	}
 	cleanPath := cleanGitPath(path)
 	baseName := filepath.Base(cleanPath)
 	if strings.HasPrefix(baseName, ".") || strings.HasPrefix(baseName, "_") {

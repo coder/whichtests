@@ -93,13 +93,13 @@ func (repo fakeGitRepo) catFileResponse(t *testing.T, args []string) (gitResult,
 		if _, ok := repo.revisions[revision]; ok {
 			return gitResult{}, nil
 		}
-		return gitFailure(128, fmt.Sprintf("fatal: bad revision %q", revision))
+		return gitFailure(fmt.Sprintf("fatal: bad revision %q", revision))
 	}
 	revision, path := splitRevisionPath(t, spec)
 	if _, ok := repo.revisions[revision][path]; ok {
 		return gitResult{}, nil
 	}
-	return gitFailure(128, fmt.Sprintf("fatal: path %q does not exist in %q", path, revision))
+	return gitFailure(fmt.Sprintf("fatal: path %q does not exist in %q", path, revision))
 }
 
 func (repo fakeGitRepo) showResponse(t *testing.T, args []string) (gitResult, error) {
@@ -108,7 +108,7 @@ func (repo fakeGitRepo) showResponse(t *testing.T, args []string) (gitResult, er
 	revision, path := splitRevisionPath(t, args[1])
 	content, ok := repo.revisions[revision][path]
 	if !ok {
-		return gitFailure(128, fmt.Sprintf("fatal: path %q does not exist in %q", path, revision))
+		return gitFailure(fmt.Sprintf("fatal: path %q does not exist in %q", path, revision))
 	}
 	return gitResult{Stdout: content}, nil
 }
@@ -145,7 +145,7 @@ func (repo fakeGitRepo) mergeBaseResponse(t *testing.T, args []string) (gitResul
 	if _, ok := repo.revisions[left]; ok {
 		return gitResult{Stdout: left + "\n"}, nil
 	}
-	return gitFailure(1, fmt.Sprintf("fatal: no merge base for %s and %s", args[1], args[2]))
+	return gitFailure(fmt.Sprintf("fatal: no merge base for %s and %s", args[1], args[2]))
 }
 
 func (repo fakeGitRepo) revParseResponse(t *testing.T, args []string) (gitResult, error) {
@@ -165,8 +165,8 @@ func splitRevisionPath(t *testing.T, spec string) (revision string, path string)
 	return revision, cleanGitPath(path)
 }
 
-func gitFailure(exitCode int, stderr string) (gitResult, error) {
-	return gitResult{Stderr: stderr, ExitCode: exitCode}, errors.New(stderr)
+func gitFailure(stderr string) (gitResult, error) {
+	return gitResult{}, errors.New(stderr)
 }
 
 func gitKey(args ...string) string {

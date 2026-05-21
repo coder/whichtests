@@ -27,11 +27,7 @@ type config struct {
 }
 
 func defaultConfig() config {
-	return config{
-		RepoRoot:   defaultRepoRoot,
-		HeadSHA:    defaultHeadSHA,
-		OutSummary: defaultOutSummary,
-	}
+	return config{}.withDefaults()
 }
 
 func (cfg config) withDefaults() config {

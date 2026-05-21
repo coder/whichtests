@@ -48,7 +48,6 @@ type buildResult struct {
 }
 
 type executionAccumulator struct {
-	Package   string
 	Files     map[string]struct{}
 	Tests     map[string]struct{}
 	Broadened bool
@@ -70,7 +69,7 @@ func selectTestPlan(ctx context.Context, cfg config, git gitRunner) ([]string, b
 	cache := newInventoryCache(cfg, git)
 	selections := map[packageKey]*packageSelection{}
 	for _, change := range changes {
-		if err = selectChange(ctx, cfg, git, cache, selections, change); err != nil {
+		if err = selectChange(ctx, cache, selections, change); err != nil {
 			return nil, buildResult{}, err
 		}
 	}
@@ -92,7 +91,6 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 		entry := accumulators[packagePath]
 		if entry == nil {
 			entry = &executionAccumulator{
-				Package:   packagePath,
 				Files:     map[string]struct{}{},
 				Tests:     map[string]struct{}{},
 				TestCount: defaultTestCount,
@@ -113,12 +111,12 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 		if entry.Broadened && len(tests) > maxBroadenedTests {
 			entry.RunAll = true
 			entry.TestCount = runOnceTestCount
-			entry.Notes = appendUniqueNote(entry.Notes, fmt.Sprintf("Package-wide broadening selected %d tests, above the %d-test cap, so this target will run all tests once.", len(tests), maxBroadenedTests))
+			entry.Notes = append(entry.Notes, fmt.Sprintf("Package-wide broadening selected %d tests, above the %d-test cap, so this target will run all tests once.", len(tests), maxBroadenedTests))
 		}
-		if unsafeTestNames := unsafeRunRegexTestNames(tests); len(unsafeTestNames) > 0 {
+		if unsafeTestCount := unsafeRunRegexTestCount(tests); unsafeTestCount > 0 {
 			entry.RunAll = true
 			entry.TestCount = runOnceTestCount
-			entry.Notes = appendUniqueNote(entry.Notes, fmt.Sprintf("Selected %d test names that cannot be passed safely through RUN, so this target will run all tests once.", len(unsafeTestNames)))
+			entry.Notes = append(entry.Notes, fmt.Sprintf("Selected %d test names that cannot be passed safely through RUN, so this target will run all tests once.", unsafeTestCount))
 		}
 		runRegex := ""
 		if !entry.RunAll {
@@ -168,7 +166,7 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 				summarizePackages(overflowPackages),
 			},
 		})
-		result.Summary.Notes = appendUniqueNote(result.Summary.Notes, note)
+		result.Summary.Notes = append(result.Summary.Notes, note)
 	}
 
 	return result, nil
@@ -190,13 +188,6 @@ func summarizePackages(packages []string) string {
 	return note
 }
 
-func appendUniqueNote(notes []string, note string) []string {
-	if note == "" || slices.Contains(notes, note) {
-		return notes
-	}
-	return append(notes, note)
-}
-
 func isSafePackagePattern(packagePath string) bool {
 	if !safePackagePatternRE.MatchString(packagePath) {
 		return false
@@ -216,14 +207,14 @@ func isSafePackagePattern(packagePath string) bool {
 	return true
 }
 
-func unsafeRunRegexTestNames(tests []string) []string {
-	unsafeNames := make([]string, 0)
+func unsafeRunRegexTestCount(tests []string) int {
+	count := 0
 	for _, testName := range tests {
 		if !safeTestNameRE.MatchString(testName) {
-			unsafeNames = append(unsafeNames, testName)
+			count++
 		}
 	}
-	return unsafeNames
+	return count
 }
 
 func buildRunRegex(tests []string) string {

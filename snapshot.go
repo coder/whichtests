@@ -14,11 +14,10 @@ import (
 )
 
 type fileSnapshot struct {
-	packageName      string
-	tests            map[string]lineRange
-	shared           []sharedDecl
-	sharedKeys       map[string]struct{}
-	testingDotImport bool
+	packageName string
+	tests       map[string]lineRange
+	shared      []sharedDecl
+	sharedKeys  map[string]struct{}
 }
 
 type sharedDeclKind uint8
@@ -46,11 +45,11 @@ func parseFileSnapshot(data []byte) (fileSnapshot, error) {
 		return fileSnapshot{}, err
 	}
 
+	testingDotImport := hasTestingDotImport(file)
 	snapshot := fileSnapshot{
-		packageName:      file.Name.Name,
-		tests:            map[string]lineRange{},
-		sharedKeys:       map[string]struct{}{},
-		testingDotImport: hasTestingDotImport(file),
+		packageName: file.Name.Name,
+		tests:       map[string]lineRange{},
+		sharedKeys:  map[string]struct{}{},
 	}
 	for _, decl := range file.Decls {
 		rangeForDecl := nodeRange(fset, decl)
@@ -79,7 +78,7 @@ func parseFileSnapshot(data []byte) (fileSnapshot, error) {
 			})
 		case name == "init":
 			snapshot.addSharedDecl(sharedDecl{Range: rangeForDecl, Kind: sharedDeclInit})
-		case isTopLevelTestFunc(funcDecl, snapshot.testingDotImport), isTopLevelFuzzFunc(funcDecl, snapshot.testingDotImport), isTopLevelExampleFunc(funcDecl):
+		case isTopLevelTestFunc(funcDecl, testingDotImport), isTopLevelFuzzFunc(funcDecl, testingDotImport), isTopLevelExampleFunc(funcDecl):
 			snapshot.tests[name] = rangeForDecl
 		default:
 			snapshot.addSharedDecl(sharedDecl{

@@ -17,7 +17,7 @@ func publishPlan(sinks outputSinks, matrix matrixOutput, summary string, stdout 
 		return err
 	}
 	if sinks.OutMatrix != "" {
-		if err := writeFile(sinks.OutMatrix, appendNewline(matrixData)); err != nil {
+		if err := writeFile(sinks.OutMatrix, append(matrixData, '\n')); err != nil {
 			return err
 		}
 	}
@@ -107,11 +107,4 @@ func appendFile(path string, data []byte) (err error) {
 		return fmt.Errorf("append %s: %w", path, err)
 	}
 	return nil
-}
-
-func appendNewline(data []byte) []byte {
-	withNewline := make([]byte, 0, len(data)+1)
-	withNewline = append(withNewline, data...)
-	withNewline = append(withNewline, '\n')
-	return withNewline
 }

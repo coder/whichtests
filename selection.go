@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"slices"
 )
 
 type packageKey struct {
@@ -18,15 +17,6 @@ type packageInventory struct {
 	Tests map[string]struct{}
 }
 
-func (inventory packageInventory) allTests() []string {
-	return slices.Sorted(maps.Keys(inventory.Tests))
-}
-
-func (inventory packageInventory) hasTest(name string) bool {
-	_, ok := inventory.Tests[name]
-	return ok
-}
-
 type packageSelection struct {
 	Key           packageKey
 	Tests         map[string]struct{}
@@ -35,8 +25,14 @@ type packageSelection struct {
 	DirectoryWide bool
 }
 
-func selectChange(ctx context.Context, cfg config, git gitRunner, cache *inventoryCache, selections map[packageKey]*packageSelection, change testFileChange) error {
-	hunks, err := listDiffHunks(ctx, cfg, git, change)
+type parsedFileSnapshot struct {
+	key      packageKey
+	snapshot fileSnapshot
+}
+
+func selectChange(ctx context.Context, cache *inventoryCache, selections map[packageKey]*packageSelection, change testFileChange) error {
+	cfg := cache.cfg
+	hunks, err := listDiffHunks(ctx, cfg, cache.git, change)
 	if err != nil {
 		return fmt.Errorf("list diff hunks for %s: %w", change.displayPath(), err)
 	}
@@ -44,60 +40,61 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 		return nil
 	}
 
-	oldData, oldExists, err := readChangeFile(ctx, cfg, git, cfg.BaseSHA, change.OldPath)
+	oldData, oldExists, err := readChangeFile(ctx, cfg, cache.git, cfg.BaseSHA, change.OldPath)
 	if err != nil {
 		return err
 	}
-	newData, newExists, err := readChangeFile(ctx, cfg, git, cfg.HeadSHA, change.NewPath)
+	newData, newExists, err := readChangeFile(ctx, cfg, cache.git, cfg.HeadSHA, change.NewPath)
 	if err != nil {
 		return err
 	}
-	if change.NewPath != "" && isRunnableTestFilePath(change.NewPath) && !newExists {
+	if isRunnableTestFilePath(change.NewPath) && !newExists {
 		return fmt.Errorf("head revision %s is missing %s", cfg.HeadSHA, change.NewPath)
 	}
 
-	var oldKey packageKey
-	oldKeyOK := oldExists
+	var oldFile *parsedFileSnapshot
 	if oldExists {
-		oldKey, err = packageKeyForData(change.OldPath, oldData)
+		parsed, err := parseSnapshotForPath(change.OldPath, oldData)
 		if err != nil {
 			return fmt.Errorf("resolve old package for %s: %w", change.displayPath(), err)
 		}
+		oldFile = &parsed
 	}
-	var newKey packageKey
-	newKeyOK := newExists
+	var newFile *parsedFileSnapshot
 	if newExists {
-		newKey, err = packageKeyForData(change.NewPath, newData)
+		parsed, err := parseSnapshotForPath(change.NewPath, newData)
 		if err != nil {
 			return fmt.Errorf("resolve new package for %s: %w", change.displayPath(), err)
 		}
+		newFile = &parsed
 	}
 
-	if newKeyOK {
-		inventory, err := cache.loadPackageInventory(ctx, cfg.HeadSHA, newKey)
+	if newFile != nil {
+		inventory, err := cache.loadPackageInventory(ctx, cfg.HeadSHA, newFile.key)
 		if err != nil {
-			return fmt.Errorf("load package inventory for %s: %w", newKey.String(), err)
+			return fmt.Errorf("load package inventory for %s: %w", newFile.key.String(), err)
 		}
-		selectionOldData := oldData
+		var oldSnapshot *fileSnapshot
 		selectionHunks := hunks
-		if !oldKeyOK || oldKey != newKey {
-			selectionOldData = nil
+		if oldFile != nil && oldFile.key == newFile.key {
+			oldSnapshot = &oldFile.snapshot
+		} else {
 			selectionHunks = newSideOnlyHunks(hunks)
 		}
-		selection := selectTestsFromHunks(change, selectionOldData, newData, inventory, selectionHunks)
-		if err := mergeSelection(ctx, cache, cfg.HeadSHA, selections, selection); err != nil {
+		selection := selectTestsFromHunks(change, oldSnapshot, newFile.snapshot, inventory, selectionHunks)
+		if err := mergeSelection(ctx, cache, selections, selection); err != nil {
 			return err
 		}
 	}
 
-	if oldKeyOK && (!newKeyOK || oldKey != newKey) {
-		inventory, err := cache.loadPackageInventory(ctx, cfg.HeadSHA, oldKey)
+	if oldFile != nil && (newFile == nil || oldFile.key != newFile.key) {
+		inventory, err := cache.loadPackageInventory(ctx, cfg.HeadSHA, oldFile.key)
 		if err != nil {
-			return fmt.Errorf("load package inventory for %s: %w", oldKey.String(), err)
+			return fmt.Errorf("load package inventory for %s: %w", oldFile.key.String(), err)
 		}
 		sourceChange := testFileChange{Kind: changeDeleted, OldPath: change.OldPath}
-		selection := selectSourceRemoval(sourceChange, oldData, inventory, hunks)
-		if err := mergeSelection(ctx, cache, cfg.HeadSHA, selections, selection); err != nil {
+		selection := selectSourceRemoval(sourceChange, oldFile.snapshot, inventory, hunks)
+		if err := mergeSelection(ctx, cache, selections, selection); err != nil {
 			return err
 		}
 	}
@@ -105,15 +102,18 @@ func selectChange(ctx context.Context, cfg config, git gitRunner, cache *invento
 	return nil
 }
 
-func packageKeyForData(filePath string, data []byte) (packageKey, error) {
+func parseSnapshotForPath(filePath string, data []byte) (parsedFileSnapshot, error) {
 	snapshot, err := parseFileSnapshot(data)
 	if err != nil {
-		return packageKey{}, fmt.Errorf("parse package clause: %w", err)
+		return parsedFileSnapshot{}, fmt.Errorf("parse package clause: %w", err)
 	}
-	return packageKey{Dir: filepath.ToSlash(filepath.Dir(filePath)), Name: snapshot.packageName}, nil
+	return parsedFileSnapshot{
+		key:      packageKey{Dir: filepath.ToSlash(filepath.Dir(filePath)), Name: snapshot.packageName},
+		snapshot: snapshot,
+	}, nil
 }
 
-func mergeSelection(ctx context.Context, cache *inventoryCache, revision string, selections map[packageKey]*packageSelection, selection *packageSelection) error {
+func mergeSelection(ctx context.Context, cache *inventoryCache, selections map[packageKey]*packageSelection, selection *packageSelection) error {
 	if selection == nil {
 		return nil
 	}
@@ -124,7 +124,7 @@ func mergeSelection(ctx context.Context, cache *inventoryCache, revision string,
 		return nil
 	}
 
-	expanded, err := cache.directoryWideSelections(ctx, revision, selection.Key.Dir, selection.Files)
+	expanded, err := cache.directoryWideSelections(ctx, cache.cfg.HeadSHA, selection.Key.Dir, selection.Files)
 	if err != nil {
 		return fmt.Errorf("load directory-wide inventory for %s: %w", packagePattern(selection.Key.Dir), err)
 	}
@@ -149,26 +149,9 @@ func mergePackageSelection(selections map[packageKey]*packageSelection, selectio
 	maps.Copy(merged.Tests, selection.Tests)
 }
 
-func selectTestsFromHunks(change testFileChange, oldData, newData []byte, newInventory packageInventory, hunks []diffHunk) *packageSelection {
-	newSnapshot, err := parseFileSnapshot(newData)
-	if err != nil {
+func selectTestsFromHunks(change testFileChange, oldSnapshot *fileSnapshot, newSnapshot fileSnapshot, newInventory packageInventory, hunks []diffHunk) *packageSelection {
+	if oldSnapshot == nil && needsOldSnapshot(hunks) {
 		return allPackageTestsSelection(newInventory, change.displayPath())
-	}
-
-	if oldData == nil && needsOldSnapshot(hunks) {
-		return allPackageTestsSelection(newInventory, change.displayPath())
-	}
-
-	var oldSnapshot *fileSnapshot
-	if len(oldData) > 0 {
-		snapshot, err := parseFileSnapshot(oldData)
-		if err != nil {
-			if needsOldSnapshot(hunks) {
-				return allPackageTestsSelection(newInventory, change.displayPath())
-			}
-		} else {
-			oldSnapshot = &snapshot
-		}
 	}
 
 	selected := map[string]struct{}{}
@@ -176,14 +159,14 @@ func selectTestsFromHunks(change testFileChange, oldData, newData []byte, newInv
 		if oldSnapshot != nil {
 			switch scope := broadeningScopeForOldHunk(oldSnapshot.shared, hunk.Old); scope {
 			case broadeningDirectory:
-				return allDirectoryTestsSelection(newInventory, change.displayPath())
+				return allDirectoryTestsSelection(newInventory.Key.Dir, change.displayPath())
 			case broadeningPackage:
 				return allPackageTestsSelection(newInventory, change.displayPath())
 			}
 		}
 		switch scope := broadeningScopeForNewHunk(newSnapshot.shared, oldSnapshot, hunk.New); scope {
 		case broadeningDirectory:
-			return allDirectoryTestsSelection(newInventory, change.displayPath())
+			return allDirectoryTestsSelection(newInventory.Key.Dir, change.displayPath())
 		case broadeningPackage:
 			return allPackageTestsSelection(newInventory, change.displayPath())
 		}
@@ -195,7 +178,7 @@ func selectTestsFromHunks(change testFileChange, oldData, newData []byte, newInv
 			if !declRange.overlaps(hunk.Old) {
 				continue
 			}
-			if newInventory.hasTest(name) {
+			if _, ok := newInventory.Tests[name]; ok {
 				selected[name] = struct{}{}
 			}
 		}
@@ -210,25 +193,20 @@ func selectTestsFromHunks(change testFileChange, oldData, newData []byte, newInv
 	}
 }
 
-func selectSourceRemoval(change testFileChange, oldData []byte, inventory packageInventory, hunks []diffHunk) *packageSelection {
-	oldSnapshot, err := parseFileSnapshot(oldData)
-	if err != nil {
-		if needsOldSnapshot(hunks) {
-			return allPackageTestsSelection(inventory, change.displayPath())
-		}
-		return nil
-	}
-
+func selectSourceRemoval(change testFileChange, oldSnapshot fileSnapshot, inventory packageInventory, hunks []diffHunk) *packageSelection {
 	selected := map[string]struct{}{}
 	for _, hunk := range hunks {
 		switch scope := broadeningScopeForOldHunk(oldSnapshot.shared, hunk.Old); scope {
 		case broadeningDirectory:
-			return allDirectoryTestsSelection(inventory, change.displayPath())
+			return allDirectoryTestsSelection(inventory.Key.Dir, change.displayPath())
 		case broadeningPackage:
 			return allPackageTestsSelection(inventory, change.displayPath())
 		}
 		for name, declRange := range oldSnapshot.tests {
-			if declRange.overlaps(hunk.Old) && inventory.hasTest(name) {
+			if !declRange.overlaps(hunk.Old) {
+				continue
+			}
+			if _, ok := inventory.Tests[name]; ok {
 				selected[name] = struct{}{}
 			}
 		}
@@ -254,27 +232,19 @@ func allPackageTestsSelectionForFiles(inventory packageInventory, files map[stri
 		Files:     files,
 		Broadened: true,
 	}
-	for _, testName := range inventory.allTests() {
-		selection.Tests[testName] = struct{}{}
-	}
+	maps.Copy(selection.Tests, inventory.Tests)
 	if len(selection.Tests) == 0 {
 		return nil
 	}
 	return selection
 }
 
-func allDirectoryTestsSelection(inventory packageInventory, filePath string) *packageSelection {
-	selection := allPackageTestsSelection(inventory, filePath)
-	if selection == nil {
-		selection = &packageSelection{
-			Key:       inventory.Key,
-			Tests:     map[string]struct{}{},
-			Files:     map[string]struct{}{filePath: {}},
-			Broadened: true,
-		}
+func allDirectoryTestsSelection(dir, filePath string) *packageSelection {
+	return &packageSelection{
+		Key:           packageKey{Dir: dir},
+		Files:         map[string]struct{}{filePath: {}},
+		DirectoryWide: true,
 	}
-	selection.DirectoryWide = true
-	return selection
 }
 
 func needsOldSnapshot(hunks []diffHunk) bool {
