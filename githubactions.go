@@ -213,9 +213,11 @@ func ensureConcreteRangeAvailable(ctx context.Context, req *runRequest, git gitR
 	}
 
 	attempts := []error{fmt.Errorf("initial merge-base: %w", mergeErr)}
+	// This is a best-effort recovery loop. One valid fetch that restores a merge
+	// base is enough, so invalid specs and failed fetches are recorded and skipped.
 	for _, spec := range req.Fetches {
 		if err := validateFetchSpec(spec); err != nil {
-			attempts = append(attempts, fmt.Errorf("validate fetch spec %s: %w", spec.Ref, err))
+			attempts = append(attempts, fmt.Errorf("fetch spec %s: %w", spec.Ref, err))
 			continue
 		}
 		if _, err := fetch(ctx, req.RepoRoot, spec); err != nil {
@@ -238,6 +240,8 @@ func runFetches(ctx context.Context, req *runRequest, fetch gitFetcher) error {
 	if fetch == nil {
 		return errors.New("history fetch is required but no fetcher was configured")
 	}
+	// This is an all-or-nothing setup path. Every refspec must be valid and
+	// fetched before later work can rely on the requested history.
 	for _, spec := range req.Fetches {
 		if err := validateFetchSpec(spec); err != nil {
 			return err

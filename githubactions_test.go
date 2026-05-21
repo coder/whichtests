@@ -395,7 +395,7 @@ func TestEnsureRangeAvailableReportsInvalidFetchSpecWithAttempts(t *testing.T) {
 	err := ensureRangeAvailable(t.Context(), &req, git, fetch)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "initial merge-base")
-	require.ErrorContains(t, err, "validate fetch spec refs/heads/main")
+	require.ErrorContains(t, err, "fetch spec refs/heads/main")
 	require.ErrorContains(t, err, "invalid fetch spec")
 }
 

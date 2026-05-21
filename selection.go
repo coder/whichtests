@@ -118,8 +118,9 @@ func (kind changeKind) expectedFileSides() (oldRequired bool, newRequired bool) 
 	case changeModified, changeRenamed, changeType:
 		return true, true
 	}
-	// Unknown change kinds intentionally require both sides so selectChange fails
-	// loud. parseChangeKind is the choke point for supported git diff statuses.
+	// parseChangeKind rejects unknown statuses before selection. This default is a
+	// safety net for direct callers or future drift, but it only triggers
+	// missing-file errors when the change carries runnable test paths.
 	return true, true
 }
 

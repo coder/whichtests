@@ -26,6 +26,10 @@ type revisionFileKey struct {
 	Path     string
 }
 
+// cachedFile records one path's facts at one revision. Its zero value means
+// file existence is unknown. exists is meaningful only when existenceKnown is
+// true. parsed implies existenceKnown and exists, and snapshot is valid only
+// when parsed is true.
 type cachedFile struct {
 	existenceKnown bool
 	exists         bool
@@ -55,6 +59,9 @@ func (cache *inventoryCache) ensureRevisionExists(ctx context.Context, revision 
 	return nil
 }
 
+// noteFileExists records a positive file-existence fact discovered by a
+// caller. The caller must have already validated that the file exists at the
+// revision, typically through a successful git ls-tree directory enumeration.
 func (cache *inventoryCache) noteFileExists(revision, filePath string) {
 	key := revisionFileKey{Revision: revision, Path: cleanGitPath(filePath)}
 	file := cache.files[key]
@@ -93,6 +100,8 @@ func (cache *inventoryCache) parseFileAtRevision(ctx context.Context, revision, 
 	}
 	parsed, err := parseSnapshotForPath(key.Path, []byte(result.Stdout))
 	if err != nil {
+		// Do not cache parse failures. Current callers return immediately, so a
+		// hypothetical retry may re-read the file from git instead of storing an error.
 		return parsedFileSnapshot{}, true, fmt.Errorf("parse %s at %s: %w", key.Path, revision, err)
 	}
 	file.parsed = true
