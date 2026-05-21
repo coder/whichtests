@@ -10,12 +10,14 @@ import (
 	"strings"
 )
 
+// inventoryCache owns repository facts for a single run. Returned package
+// inventories and parsed snapshots alias cached maps and slices, so callers must
+// treat them as read-only unless they clone before mutating.
 type inventoryCache struct {
 	cfg            config
 	git            gitRunner
 	validRevisions map[string]struct{}
-	fileReads      map[revisionFileKey]fileReadResult
-	fileSnapshots  map[revisionFileKey]parsedFileSnapshot
+	files          map[revisionFileKey]cachedFile
 	fileLists      map[string][]string
 	packages       map[string]packageInventory
 }
@@ -25,9 +27,11 @@ type revisionFileKey struct {
 	Path     string
 }
 
-type fileReadResult struct {
-	Data   []byte
-	Exists bool
+type cachedFile struct {
+	existenceKnown bool
+	exists         bool
+	parsed         bool
+	snapshot       parsedFileSnapshot
 }
 
 func newInventoryCache(cfg config, git gitRunner) *inventoryCache {
@@ -35,8 +39,7 @@ func newInventoryCache(cfg config, git gitRunner) *inventoryCache {
 		cfg:            cfg,
 		git:            git,
 		validRevisions: map[string]struct{}{},
-		fileReads:      map[revisionFileKey]fileReadResult{},
-		fileSnapshots:  map[revisionFileKey]parsedFileSnapshot{},
+		files:          map[revisionFileKey]cachedFile{},
 		fileLists:      map[string][]string{},
 		packages:       map[string]packageInventory{},
 	}
@@ -53,49 +56,49 @@ func (cache *inventoryCache) ensureRevisionExists(ctx context.Context, revision 
 	return nil
 }
 
-func (cache *inventoryCache) readFileAtRevision(ctx context.Context, revision, filePath string) ([]byte, bool, error) {
+func (cache *inventoryCache) noteFileExists(revision, filePath string) {
 	key := revisionFileKey{Revision: revision, Path: cleanGitPath(filePath)}
-	if result, ok := cache.fileReads[key]; ok {
-		return result.Data, result.Exists, nil
+	file := cache.files[key]
+	file.existenceKnown = true
+	file.exists = true
+	cache.files[key] = file
+}
+
+// parseFileAtRevision returns a parsed snapshot for an existing file. The
+// returned snapshot aliases cache state and must be treated as read-only.
+func (cache *inventoryCache) parseFileAtRevision(ctx context.Context, revision, filePath string) (parsedFileSnapshot, bool, error) {
+	key := revisionFileKey{Revision: revision, Path: cleanGitPath(filePath)}
+	file := cache.files[key]
+	if file.parsed {
+		return file.snapshot, true, nil
 	}
 	if err := cache.ensureRevisionExists(ctx, revision); err != nil {
-		return nil, false, err
+		return parsedFileSnapshot{}, false, err
 	}
-	fileExists, err := fileExistsAtRevision(ctx, cache.cfg, cache.git, revision, key.Path)
-	if err != nil {
-		return nil, false, err
+	if !file.existenceKnown {
+		exists, err := fileExistsAtRevision(ctx, cache.cfg, cache.git, revision, key.Path)
+		if err != nil {
+			return parsedFileSnapshot{}, false, err
+		}
+		file.existenceKnown = true
+		file.exists = exists
+		cache.files[key] = file
 	}
-	if !fileExists {
-		cache.fileReads[key] = fileReadResult{}
-		return nil, false, nil
+	if !file.exists {
+		return parsedFileSnapshot{}, false, nil
 	}
 
 	result, err := cache.git(ctx, cache.cfg.RepoRoot, "show", revision+":"+key.Path)
 	if err != nil {
-		return nil, false, fmt.Errorf("read %s at %s: %w", key.Path, revision, err)
+		return parsedFileSnapshot{}, false, fmt.Errorf("read %s at %s: %w", key.Path, revision, err)
 	}
-	read := fileReadResult{Data: []byte(result.Stdout), Exists: true}
-	cache.fileReads[key] = read
-	return read.Data, true, nil
-}
-
-func (cache *inventoryCache) parseFileAtRevision(ctx context.Context, revision, filePath string) (parsedFileSnapshot, bool, error) {
-	key := revisionFileKey{Revision: revision, Path: cleanGitPath(filePath)}
-	if snapshot, ok := cache.fileSnapshots[key]; ok {
-		return snapshot, true, nil
-	}
-	data, exists, err := cache.readFileAtRevision(ctx, revision, key.Path)
-	if err != nil {
-		return parsedFileSnapshot{}, false, err
-	}
-	if !exists {
-		return parsedFileSnapshot{}, false, nil
-	}
-	parsed, err := parseSnapshotForPath(key.Path, data)
+	parsed, err := parseSnapshotForPath(key.Path, []byte(result.Stdout))
 	if err != nil {
 		return parsedFileSnapshot{}, true, fmt.Errorf("parse %s at %s: %w", key.Path, revision, err)
 	}
-	cache.fileSnapshots[key] = parsed
+	file.parsed = true
+	file.snapshot = parsed
+	cache.files[key] = file
 	return parsed, true, nil
 }
 
@@ -106,6 +109,8 @@ func (cache *inventoryCache) parseChangeFileAtRevision(ctx context.Context, revi
 	return cache.parseFileAtRevision(ctx, revision, filePath)
 }
 
+// loadPackageInventory returns an inventory whose maps alias cache state. Callers
+// must treat the result as read-only or clone maps before mutating.
 func (cache *inventoryCache) loadPackageInventory(ctx context.Context, revision string, key packageKey) (packageInventory, error) {
 	cacheKey := revision + "\x00" + key.Dir + "\x00" + key.Name
 	if inventory, ok := cache.packages[cacheKey]; ok {
@@ -142,6 +147,9 @@ func (cache *inventoryCache) listTestFilesInDir(ctx context.Context, revision, d
 	if files, ok := cache.fileLists[cacheKey]; ok {
 		return files, nil
 	}
+	if err := cache.ensureRevisionExists(ctx, revision); err != nil {
+		return nil, err
+	}
 	pathspec := cmp.Or(cleanDir, ".")
 	result, err := cache.git(ctx, cache.cfg.RepoRoot, "ls-tree", "-r", "-z", "--name-only", revision, "--", pathspec)
 	if err != nil {
@@ -160,6 +168,7 @@ func (cache *inventoryCache) listTestFilesInDir(ctx context.Context, revision, d
 			continue
 		}
 		files = append(files, filePath)
+		cache.noteFileExists(revision, filePath)
 	}
 	slices.Sort(files)
 	cache.fileLists[cacheKey] = files

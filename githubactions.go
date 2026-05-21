@@ -215,7 +215,8 @@ func ensureConcreteRangeAvailable(ctx context.Context, req *runRequest, git gitR
 	attempts := []error{fmt.Errorf("initial merge-base: %w", mergeErr)}
 	for _, spec := range req.Fetches {
 		if err := validateFetchSpec(spec); err != nil {
-			return err
+			attempts = append(attempts, fmt.Errorf("validate fetch spec %s: %w", spec.Ref, err))
+			continue
 		}
 		if _, err := fetch(ctx, req.RepoRoot, spec); err != nil {
 			attempts = append(attempts, fmt.Errorf("fetch %s from %s: %w", spec.Ref, spec.Remote, err))

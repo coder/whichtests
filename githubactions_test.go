@@ -344,6 +344,61 @@ func TestEnsureRangeAvailableFallsBackWhenFirstFetchFails(t *testing.T) {
 	require.Equal(t, req.Fetches, fetches)
 }
 
+func TestEnsureRangeAvailableSkipsInvalidFetchSpecWhenLaterFetchSucceeds(t *testing.T) {
+	t.Parallel()
+
+	req := runRequest{
+		RepoRoot: "/repo",
+		Range:    diffRange{BaseSHA: "base123", HeadSHA: "head123"},
+		Fetches: []fetchSpec{
+			{Remote: "", Ref: "refs/heads/main"},
+			{Remote: "https://github.com/coder/coder.git", Ref: "base123"},
+		},
+	}
+	mergeBaseCalls := 0
+	git := func(_ context.Context, _ string, args ...string) (gitResult, error) {
+		require.Equal(t, []string{"merge-base", "base123", "head123"}, args)
+		mergeBaseCalls++
+		if mergeBaseCalls == 1 {
+			return gitFailure("fatal: no merge base")
+		}
+		return gitResult{Stdout: "base123\n"}, nil
+	}
+	var fetches []fetchSpec
+	fetch := func(_ context.Context, _ string, spec fetchSpec) (gitResult, error) {
+		fetches = append(fetches, spec)
+		return gitResult{}, nil
+	}
+	require.NoError(t, ensureRangeAvailable(t.Context(), &req, git, fetch))
+	require.Equal(t, 2, mergeBaseCalls)
+	require.Equal(t, []fetchSpec{{Remote: "https://github.com/coder/coder.git", Ref: "base123"}}, fetches)
+}
+
+func TestEnsureRangeAvailableReportsInvalidFetchSpecWithAttempts(t *testing.T) {
+	t.Parallel()
+
+	req := runRequest{
+		RepoRoot: "/repo",
+		Range:    diffRange{BaseSHA: "base123", HeadSHA: "head123"},
+		Fetches: []fetchSpec{
+			{Remote: "", Ref: "refs/heads/main"},
+		},
+	}
+	git := func(_ context.Context, _ string, args ...string) (gitResult, error) {
+		require.Equal(t, []string{"merge-base", "base123", "head123"}, args)
+		return gitFailure("fatal: no merge base")
+	}
+	fetch := func(_ context.Context, _ string, spec fetchSpec) (gitResult, error) {
+		t.Fatalf("unexpected fetch for invalid spec: %+v", spec)
+		return gitResult{}, nil
+	}
+	err := ensureRangeAvailable(t.Context(), &req, git, fetch)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "initial merge-base")
+	require.ErrorContains(t, err, "validate fetch spec refs/heads/main")
+	require.ErrorContains(t, err, "invalid fetch spec")
+}
+
 func TestEnsureRangeAvailableReportsAllFetchFailures(t *testing.T) {
 	t.Parallel()
 

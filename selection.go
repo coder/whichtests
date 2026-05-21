@@ -103,29 +103,27 @@ func selectChange(ctx context.Context, cache *inventoryCache, selections map[pac
 }
 
 func (change testFileChange) expectsOldFile() bool {
-	if !isRunnableTestFilePath(change.OldPath) {
-		return false
-	}
-	switch change.Kind {
-	case changeAdded:
-		return false
-	case changeDeleted, changeModified, changeRenamed, changeType:
-		return true
-	}
-	return true
+	oldRequired, _ := change.Kind.expectedFileSides()
+	return oldRequired && isRunnableTestFilePath(change.OldPath)
 }
 
 func (change testFileChange) expectsNewFile() bool {
-	if !isRunnableTestFilePath(change.NewPath) {
-		return false
-	}
-	switch change.Kind {
+	_, newRequired := change.Kind.expectedFileSides()
+	return newRequired && isRunnableTestFilePath(change.NewPath)
+}
+
+func (kind changeKind) expectedFileSides() (oldRequired bool, newRequired bool) {
+	switch kind {
+	case changeAdded:
+		return false, true
 	case changeDeleted:
-		return false
-	case changeAdded, changeModified, changeRenamed, changeType:
-		return true
+		return true, false
+	case changeModified, changeRenamed, changeType:
+		return true, true
 	}
-	return true
+	// Unknown change kinds intentionally require both sides so selectChange fails
+	// loud. parseChangeKind is the choke point for supported git diff statuses.
+	return true, true
 }
 
 func parseSnapshotForPath(filePath string, data []byte) (parsedFileSnapshot, error) {

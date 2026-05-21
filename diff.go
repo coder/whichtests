@@ -239,25 +239,6 @@ func parseNonNegativeInt(value string) (int, error) {
 	return parsed, nil
 }
 
-func readFileAtRevision(ctx context.Context, cfg config, git gitRunner, revision, filePath string) ([]byte, bool, error) {
-	if err := ensureRevisionExists(ctx, cfg, git, revision); err != nil {
-		return nil, false, err
-	}
-	fileExists, err := fileExistsAtRevision(ctx, cfg, git, revision, filePath)
-	if err != nil {
-		return nil, false, err
-	}
-	if !fileExists {
-		return nil, false, nil
-	}
-
-	result, err := git(ctx, cfg.RepoRoot, "show", revision+":"+filePath)
-	if err != nil {
-		return nil, false, fmt.Errorf("read %s at %s: %w", filePath, revision, err)
-	}
-	return []byte(result.Stdout), true, nil
-}
-
 func fileExistsAtRevision(ctx context.Context, cfg config, git gitRunner, revision, filePath string) (bool, error) {
 	result, err := git(ctx, cfg.RepoRoot, "ls-tree", "-z", "--name-only", revision, "--", filePath)
 	if err != nil {

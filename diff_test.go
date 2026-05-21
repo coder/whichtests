@@ -65,7 +65,7 @@ func TestParseNonNegativeInt(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestReadFileAtRevisionPropagatesExistenceCheckFailures(t *testing.T) {
+func TestFileExistsAtRevisionPropagatesLsTreeFailures(t *testing.T) {
 	t.Parallel()
 
 	repo := fakeGitRepo{
@@ -82,6 +82,6 @@ func TestReadFileAtRevisionPropagatesExistenceCheckFailures(t *testing.T) {
 			},
 		},
 	}
-	_, _, err := readFileAtRevision(t.Context(), config{RepoRoot: t.TempDir()}, repo.runner(t), "head", "pkg/sample_test.go")
+	_, err := fileExistsAtRevision(t.Context(), config{RepoRoot: t.TempDir()}, repo.runner(t), "head", "pkg/sample_test.go")
 	require.ErrorContains(t, err, "check whether pkg/sample_test.go exists at head")
 }

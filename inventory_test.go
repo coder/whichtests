@@ -95,7 +95,7 @@ func TestExternal(t *testing.T) {}
 		{Dir: "pkg", Name: "foo_test"},
 	}, []packageKey{inventories[0].Key, inventories[1].Key})
 	require.Equal(t, 1, counter.counts["cat-file"])
-	require.Equal(t, 3, counter.counts["ls-tree"])
+	require.Equal(t, 1, counter.counts["ls-tree"])
 	require.Equal(t, 2, counter.counts["show"])
 	firstCommandCount := counter.total
 

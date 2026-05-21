@@ -716,3 +716,68 @@ func TestAlpha(t *testing.T) {}
 		})
 	}
 }
+
+func TestSelectChangeRequiresNewFileWhenKindExpectsIt(t *testing.T) {
+	t.Parallel()
+
+	oldPath := "pkg/base_side_test.go"
+	newPath := "pkg/head_side_test.go"
+	oldContent := `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {}
+`
+	tests := []struct {
+		name     string
+		change   testFileChange
+		key      string
+		wantPath string
+	}{
+		{
+			name:     "added",
+			change:   testFileChange{Kind: changeAdded, NewPath: newPath},
+			key:      newPath,
+			wantPath: newPath,
+		},
+		{
+			name:     "modified",
+			change:   testFileChange{Kind: changeModified, OldPath: oldPath, NewPath: oldPath},
+			key:      oldPath,
+			wantPath: oldPath,
+		},
+		{
+			name:     "renamed",
+			change:   testFileChange{Kind: changeRenamed, OldPath: oldPath, NewPath: newPath},
+			key:      oldPath + "\x00" + newPath,
+			wantPath: newPath,
+		},
+		{
+			name:     "type",
+			change:   testFileChange{Kind: changeType, OldPath: oldPath, NewPath: oldPath},
+			key:      oldPath,
+			wantPath: oldPath,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			baseFiles := map[string]string{}
+			if tt.change.OldPath != "" {
+				baseFiles[tt.change.OldPath] = oldContent
+			}
+			repo := fakeGitRepo{
+				revisions: map[string]map[string]string{
+					"base": baseFiles,
+					"head": {},
+				},
+				diffOutputs: map[string]string{
+					tt.key: diffForChange(lineRange{Start: 5, End: 5}, lineRange{Start: 5, End: 5}),
+				},
+			}
+			cache := newInventoryCache(config{RepoRoot: "/repo", BaseSHA: "base", HeadSHA: "head"}, repo.runner(t))
+			err := selectChange(t.Context(), cache, map[packageKey]*packageSelection{}, tt.change)
+			require.ErrorContains(t, err, "head revision head is missing "+tt.wantPath)
+		})
+	}
+}
