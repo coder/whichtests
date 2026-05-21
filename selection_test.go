@@ -12,6 +12,252 @@ func TestSelectTestsForSnapshots(t *testing.T) {
 	const changedPath = "pkg/changed_test.go"
 	change := testFileChange{Kind: changeModified, OldPath: changedPath, NewPath: changedPath}
 
+	const (
+		// These fixtures hoist repeated row sources.
+		selectionFixture01 = `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("before alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("stable beta")
+}
+`
+		selectionFixture02 = `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("changed alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("stable beta")
+}
+`
+		selectionFixture03 = `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+`
+		selectionFixture04 = `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("new beta")
+}
+`
+		selectionFixture05 = `package sample
+
+import "testing"
+
+func setup(t *testing.T) {
+	t.Helper()
+	t.Log("before helper")
+}
+
+func TestAlpha(t *testing.T) {
+	setup(t)
+}
+`
+		selectionFixture06 = `package sample
+
+import "testing"
+
+func setup(t *testing.T) {
+	t.Helper()
+	t.Log("changed helper")
+}
+
+func TestAlpha(t *testing.T) {
+	setup(t)
+}
+`
+		selectionFixture07 = `package sample
+
+import "testing"
+
+var packageValue = 1
+
+func TestAlpha(t *testing.T) {
+	t.Log(packageValue)
+}
+`
+		selectionFixture08 = `package sample
+
+import "testing"
+
+var packageValue = 2
+
+func TestAlpha(t *testing.T) {
+	t.Log(packageValue)
+}
+`
+		selectionFixture09 = `package sample
+
+import (
+	"testing"
+)
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("beta")
+}
+`
+		selectionFixture10 = `package sample
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("beta")
+}
+`
+		selectionFixture11 = `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+
+func setupCase(t *testing.T) {
+	t.Helper()
+	t.Log("beta helper")
+}
+
+func TestBeta(t *testing.T) {
+	setupCase(t)
+}
+`
+		selectionFixture12 = `package sample
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+`
+		selectionFixture13 = `package sample
+
+import (
+	"testing"
+)
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+`
+		selectionFixture14 = `package sample
+
+import "testing"
+
+func TestBeta(t *testing.T) {
+	t.Log("beta")
+}
+`
+		selectionFixture15 = `package sample
+
+import (
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) {
+	os.Exit(m.Run())
+}
+`
+		selectionFixture16 = `package sample
+
+import (
+	"fmt"
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) {
+	fmt.Println("setup")
+	os.Exit(m.Run())
+}
+`
+		selectionFixture17 = `package sample
+
+import "testing"
+
+func init() {
+	register("before")
+}
+`
+		selectionFixture18 = `package sample
+
+import "testing"
+
+func init() {
+	register("after")
+}
+`
+		selectionFixture19 = `package sample
+
+import "testing"
+
+func setup(t *testing.T) {
+	t.Helper()
+	t.Log("helper")
+}
+
+func TestAlpha(t *testing.T) {
+	setup(t)
+}
+`
+		selectionFixture20 = `package sample
+
+import "testing"
+
+func TestBeta(t *testing.T) {
+	t.Log("new beta")
+}
+`
+		selectionFixture21 = `package sample
+
+import . "testing"
+
+func TestAlpha(t *T) {
+	t.Log("before alpha")
+}
+`
+		selectionFixture22 = `package sample
+
+import . "testing"
+
+func TestAlpha(t *T) {
+	t.Log("changed alpha")
+}
+`
+	)
+
 	tests := []struct {
 		name              string
 		oldData           []byte
@@ -24,168 +270,37 @@ func TestSelectTestsForSnapshots(t *testing.T) {
 		wantNoSelection   bool
 	}{
 		{
-			name: "body change selects only changed test",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("before alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("stable beta")
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("changed alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("stable beta")
-}
-`),
+			name:    "body change selects only changed test",
+			oldData: []byte(selectionFixture01),
+			newData: []byte(selectionFixture02),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("changed alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("stable beta")
-}
-`,
+				changedPath: selectionFixture02,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("before alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("stable beta")
-}
-`, `t.Log("before alpha")`),
-				New: singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("changed alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("stable beta")
-}
-`, `t.Log("changed alpha")`),
+				Old: singleLineRange(t, selectionFixture01, `t.Log("before alpha")`),
+				New: singleLineRange(t, selectionFixture02, `t.Log("changed alpha")`),
 			}},
 			wantTests: []string{"TestAlpha"},
 		},
 		{
-			name: "new top-level test selects only new test",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`),
+			name:    "new top-level test selects only new test",
+			oldData: []byte(selectionFixture03),
+			newData: []byte(selectionFixture04),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`,
+				changedPath: selectionFixture04,
 			}),
 			hunks: []diffHunk{{
 				Old: emptyRangeAt(7),
-				New: singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`, `t.Log("new beta")`),
+				New: singleLineRange(t, selectionFixture04, `t.Log("new beta")`),
 			}},
 			wantTests: []string{"TestBeta"},
 		},
 		{
-			name: "existing helper change broadens across package",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("before helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("changed helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`),
+			name:    "existing helper change broadens across package",
+			oldData: []byte(selectionFixture05),
+			newData: []byte(selectionFixture06),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("changed helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`,
+				changedPath: selectionFixture06,
 				"pkg/sibling_test.go": `package sample
 
 import "testing"
@@ -196,69 +311,18 @@ func TestBeta(t *testing.T) {
 `,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("before helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`, `t.Log("before helper")`),
-				New: singleLineRange(t, `package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("changed helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`, `t.Log("changed helper")`),
+				Old: singleLineRange(t, selectionFixture05, `t.Log("before helper")`),
+				New: singleLineRange(t, selectionFixture06, `t.Log("changed helper")`),
 			}},
 			wantTests:     []string{"TestAlpha", "TestBeta"},
 			wantBroadened: true,
 		},
 		{
-			name: "package variable change broadens across package",
-			oldData: []byte(`package sample
-
-import "testing"
-
-var packageValue = 1
-
-func TestAlpha(t *testing.T) {
-	t.Log(packageValue)
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-var packageValue = 2
-
-func TestAlpha(t *testing.T) {
-	t.Log(packageValue)
-}
-`),
+			name:    "package variable change broadens across package",
+			oldData: []byte(selectionFixture07),
+			newData: []byte(selectionFixture08),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-var packageValue = 2
-
-func TestAlpha(t *testing.T) {
-	t.Log(packageValue)
-}
-`,
+				changedPath: selectionFixture08,
 				"pkg/sibling_test.go": `package sample
 
 import "testing"
@@ -269,479 +333,99 @@ func TestBeta(t *testing.T) {
 `,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import "testing"
-
-var packageValue = 1
-
-func TestAlpha(t *testing.T) {
-	t.Log(packageValue)
-}
-`, "var packageValue = 1"),
-				New: singleLineRange(t, `package sample
-
-import "testing"
-
-var packageValue = 2
-
-func TestAlpha(t *testing.T) {
-	t.Log(packageValue)
-}
-`, "var packageValue = 2"),
+				Old: singleLineRange(t, selectionFixture07, "var packageValue = 1"),
+				New: singleLineRange(t, selectionFixture08, "var packageValue = 2"),
 			}},
 			wantTests:     []string{"TestAlpha", "TestBeta"},
 			wantBroadened: true,
 		},
 		{
-			name: "additive import broadens package",
-			oldData: []byte(`package sample
-
-import (
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`),
-			newData: []byte(`package sample
-
-import (
-	"fmt"
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`),
+			name:    "additive import broadens package",
+			oldData: []byte(selectionFixture09),
+			newData: []byte(selectionFixture10),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import (
-	"fmt"
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`,
+				changedPath: selectionFixture10,
 			}),
 			hunks: []diffHunk{{
-				Old: emptyRangeAt(singleLineRange(t, `package sample
-
-import (
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`, `"testing"`).Start),
-				New: singleLineRange(t, `package sample
-
-import (
-	"fmt"
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`, `"fmt"`),
+				Old: emptyRangeAt(singleLineRange(t, selectionFixture09, `"testing"`).Start),
+				New: singleLineRange(t, selectionFixture10, `"fmt"`),
 			}},
 			wantTests:     []string{"TestAlpha", "TestBeta"},
 			wantBroadened: true,
 		},
 		{
-			name: "additive helper with new test stays narrow",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func setupCase(t *testing.T) {
-	t.Helper()
-	t.Log("beta helper")
-}
-
-func TestBeta(t *testing.T) {
-	setupCase(t)
-}
-`),
+			name:    "additive helper with new test stays narrow",
+			oldData: []byte(selectionFixture03),
+			newData: []byte(selectionFixture11),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func setupCase(t *testing.T) {
-	t.Helper()
-	t.Log("beta helper")
-}
-
-func TestBeta(t *testing.T) {
-	setupCase(t)
-}
-`,
+				changedPath: selectionFixture11,
 			}),
 			hunks: []diffHunk{{
 				Old: emptyRangeAt(7),
 				New: rangeSpan(
-					singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func setupCase(t *testing.T) {
-	t.Helper()
-	t.Log("beta helper")
-}
-
-func TestBeta(t *testing.T) {
-	setupCase(t)
-}
-`, "func setupCase(t *testing.T) {"),
-					singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-
-func setupCase(t *testing.T) {
-	t.Helper()
-	t.Log("beta helper")
-}
-
-func TestBeta(t *testing.T) {
-	setupCase(t)
-}
-`, "setupCase(t)"),
+					singleLineRange(t, selectionFixture11, "func setupCase(t *testing.T) {"),
+					singleLineRange(t, selectionFixture11, "setupCase(t)"),
 				),
 			}},
 			wantTests: []string{"TestBeta"},
 		},
 		{
-			name: "removed import broadens across package",
-			oldData: []byte(`package sample
-
-import (
-	"fmt"
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`),
-			newData: []byte(`package sample
-
-import (
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`),
+			name:    "removed import broadens across package",
+			oldData: []byte(selectionFixture12),
+			newData: []byte(selectionFixture13),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import (
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`,
-				"pkg/sibling_test.go": `package sample
-
-import "testing"
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`,
+				changedPath:           selectionFixture13,
+				"pkg/sibling_test.go": selectionFixture14,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import (
-	"fmt"
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`, `"fmt"`),
-				New: emptyRangeAt(singleLineRange(t, `package sample
-
-import (
-	"testing"
-)
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`, `"testing"`).Start),
+				Old: singleLineRange(t, selectionFixture12, `"fmt"`),
+				New: emptyRangeAt(singleLineRange(t, selectionFixture13, `"testing"`).Start),
 			}},
 			wantTests:     []string{"TestAlpha", "TestBeta"},
 			wantBroadened: true,
 		},
 		{
-			name: "TestMain broadens across sibling files in same package",
-			oldData: []byte(`package sample
-
-import (
-	"os"
-	"testing"
-)
-
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
-}
-`),
-			newData: []byte(`package sample
-
-import (
-	"fmt"
-	"os"
-	"testing"
-)
-
-func TestMain(m *testing.M) {
-	fmt.Println("setup")
-	os.Exit(m.Run())
-}
-`),
+			name:    "TestMain broadens across sibling files in same package",
+			oldData: []byte(selectionFixture15),
+			newData: []byte(selectionFixture16),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import (
-	"fmt"
-	"os"
-	"testing"
-)
-
-func TestMain(m *testing.M) {
-	fmt.Println("setup")
-	os.Exit(m.Run())
-}
-`,
-				"pkg/internal_test.go": `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`,
+				changedPath:            selectionFixture16,
+				"pkg/internal_test.go": selectionFixture03,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import (
-	"os"
-	"testing"
-)
-
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
-}
-`, `os.Exit(m.Run())`),
-				New: singleLineRange(t, `package sample
-
-import (
-	"fmt"
-	"os"
-	"testing"
-)
-
-func TestMain(m *testing.M) {
-	fmt.Println("setup")
-	os.Exit(m.Run())
-}
-`, `fmt.Println("setup")`),
+				Old: singleLineRange(t, selectionFixture15, `os.Exit(m.Run())`),
+				New: singleLineRange(t, selectionFixture16, `fmt.Println("setup")`),
 			}},
 			wantDirectoryWide: true,
 		},
 		{
-			name: "init broadens across sibling files in same package",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func init() {
-	register("before")
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func init() {
-	register("after")
-}
-`),
+			name:    "init broadens across sibling files in same package",
+			oldData: []byte(selectionFixture17),
+			newData: []byte(selectionFixture18),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func init() {
-	register("after")
-}
-`,
-				"pkg/internal_test.go": `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`,
+				changedPath:            selectionFixture18,
+				"pkg/internal_test.go": selectionFixture03,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import "testing"
-
-func init() {
-	register("before")
-}
-`, `register("before")`),
-				New: singleLineRange(t, `package sample
-
-import "testing"
-
-func init() {
-	register("after")
-}
-`, `register("after")`),
+				Old: singleLineRange(t, selectionFixture17, `register("before")`),
+				New: singleLineRange(t, selectionFixture18, `register("after")`),
 			}},
 			wantDirectoryWide: true,
 		},
 		{
-			name: "deleted helper uses old snapshot to broaden package",
-			oldData: []byte(`package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`),
-			newData: []byte(`package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`),
+			name:    "deleted helper uses old snapshot to broaden package",
+			oldData: []byte(selectionFixture19),
+			newData: []byte(selectionFixture03),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`,
-				"pkg/sibling_test.go": `package sample
-
-import "testing"
-
-func TestBeta(t *testing.T) {
-	t.Log("beta")
-}
-`,
+				changedPath:           selectionFixture03,
+				"pkg/sibling_test.go": selectionFixture14,
 			}),
 			hunks: []diffHunk{{
 				Old: rangeSpan(
-					singleLineRange(t, `package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`, "func setup(t *testing.T) {"),
-					singleLineRange(t, `package sample
-
-import "testing"
-
-func setup(t *testing.T) {
-	t.Helper()
-	t.Log("helper")
-}
-
-func TestAlpha(t *testing.T) {
-	setup(t)
-}
-`, `t.Log("helper")`),
+					singleLineRange(t, selectionFixture19, "func setup(t *testing.T) {"),
+					singleLineRange(t, selectionFixture19, `t.Log("helper")`),
 				),
-				New: emptyRangeAt(singleLineRange(t, `package sample
-
-import "testing"
-
-func TestAlpha(t *testing.T) {
-	t.Log("alpha")
-}
-`, `func TestAlpha(t *testing.T) {`).Start),
+				New: emptyRangeAt(singleLineRange(t, selectionFixture03, `func TestAlpha(t *testing.T) {`).Start),
 			}},
 			wantTests:     []string{"TestAlpha", "TestBeta"},
 			wantBroadened: true,
@@ -749,92 +433,29 @@ func TestAlpha(t *testing.T) {
 		{
 			name:    "brand-new file with additive hunk selects only new tests",
 			oldData: nil,
-			newData: []byte(`package sample
-
-import "testing"
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`),
+			newData: []byte(selectionFixture20),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import "testing"
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`,
+				changedPath: selectionFixture20,
 			}),
 			hunks: []diffHunk{{
 				Old: emptyRangeAt(1),
 				New: rangeSpan(
-					singleLineRange(t, `package sample
-
-import "testing"
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`, "func TestBeta(t *testing.T) {"),
-					singleLineRange(t, `package sample
-
-import "testing"
-
-func TestBeta(t *testing.T) {
-	t.Log("new beta")
-}
-`, `t.Log("new beta")`),
+					singleLineRange(t, selectionFixture20, "func TestBeta(t *testing.T) {"),
+					singleLineRange(t, selectionFixture20, `t.Log("new beta")`),
 				),
 			}},
 			wantTests: []string{"TestBeta"},
 		},
 		{
-			name: "dot imported testing is recognized",
-			oldData: []byte(`package sample
-
-import . "testing"
-
-func TestAlpha(t *T) {
-	t.Log("before alpha")
-}
-`),
-			newData: []byte(`package sample
-
-import . "testing"
-
-func TestAlpha(t *T) {
-	t.Log("changed alpha")
-}
-`),
+			name:    "dot imported testing is recognized",
+			oldData: []byte(selectionFixture21),
+			newData: []byte(selectionFixture22),
 			inventory: mustPackageInventory(t, map[string]string{
-				changedPath: `package sample
-
-import . "testing"
-
-func TestAlpha(t *T) {
-	t.Log("changed alpha")
-}
-`,
+				changedPath: selectionFixture22,
 			}),
 			hunks: []diffHunk{{
-				Old: singleLineRange(t, `package sample
-
-import . "testing"
-
-func TestAlpha(t *T) {
-	t.Log("before alpha")
-}
-`, `t.Log("before alpha")`),
-				New: singleLineRange(t, `package sample
-
-import . "testing"
-
-func TestAlpha(t *T) {
-	t.Log("changed alpha")
-}
-`, `t.Log("changed alpha")`),
+				Old: singleLineRange(t, selectionFixture21, `t.Log("before alpha")`),
+				New: singleLineRange(t, selectionFixture22, `t.Log("changed alpha")`),
 			}},
 			wantTests: []string{"TestAlpha"},
 		},
