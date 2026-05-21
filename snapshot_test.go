@@ -26,3 +26,33 @@ func Examplefoo() {}
 	require.NoError(t, err)
 	require.Equal(t, []string{"Example", "ExampleFoo", "FuzzAlpha", "TestAlpha"}, slices.Sorted(maps.Keys(snapshot.tests)))
 }
+
+func TestParseFileSnapshotRecordsStructure(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := parseFileSnapshot([]byte(`package sample
+
+import . "testing"
+
+const answer = 42
+var packageValue = answer
+type fixture struct{}
+
+func helper() {}
+func init() {}
+func TestMain(m *M) {}
+func TestAlpha(t *T) {}
+func FuzzAlpha(f *F) {}
+`))
+	require.NoError(t, err)
+	require.Equal(t, "sample", snapshot.packageName)
+	require.Equal(t, []string{"FuzzAlpha", "TestAlpha"}, slices.Sorted(maps.Keys(snapshot.tests)))
+	require.Contains(t, snapshot.sharedKeys, "const:answer")
+	require.Contains(t, snapshot.sharedKeys, "var:packageValue")
+	require.Contains(t, snapshot.sharedKeys, "type:fixture")
+	require.Contains(t, snapshot.sharedKeys, "func:helper")
+	require.Contains(t, snapshot.sharedKeys, "func:TestMain")
+	require.True(t, slices.ContainsFunc(snapshot.shared, func(decl sharedDecl) bool {
+		return decl.Kind == sharedDeclInit
+	}))
+}

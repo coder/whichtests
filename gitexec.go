@@ -44,7 +44,7 @@ func execGit(ctx context.Context, dir string, args ...string) (gitResult, error)
 		message = strings.TrimSpace(result.Stdout)
 	}
 	if strings.Contains(message, "no merge base") {
-		return result, fmt.Errorf("git %s: %s. Ensure both revisions have full history before diffing %q", strings.Join(args, " "), message, args[len(args)-1])
+		return result, fmt.Errorf("git %s: %s. Ensure both revisions have full history before diffing", strings.Join(args, " "), message)
 	}
 	if message == "" {
 		message = err.Error()

@@ -211,20 +211,23 @@ func ensureConcreteRangeAvailable(ctx context.Context, req *runRequest, git gitR
 	if fetch == nil {
 		return errors.New("history fetch is required but no fetcher was configured")
 	}
+
+	attempts := []error{fmt.Errorf("initial merge-base: %w", mergeErr)}
 	for _, spec := range req.Fetches {
 		if err := validateFetchSpec(spec); err != nil {
 			return err
 		}
 		if _, err := fetch(ctx, req.RepoRoot, spec); err != nil {
-			return fmt.Errorf("fetch %s from %s: %w", spec.Ref, spec.Remote, err)
+			attempts = append(attempts, fmt.Errorf("fetch %s from %s: %w", spec.Ref, spec.Remote, err))
+			continue
 		}
 		_, err := gitMergeBase(ctx, req.RepoRoot, git, req.Range.BaseSHA, req.Range.HeadSHA)
 		if err == nil {
 			return nil
 		}
-		mergeErr = err
+		attempts = append(attempts, fmt.Errorf("merge-base after fetching %s from %s: %w", spec.Ref, spec.Remote, err))
 	}
-	return fmt.Errorf("unable to resolve a merge base for %s...%s after fetching base history: %w", req.Range.BaseSHA, req.Range.HeadSHA, mergeErr)
+	return fmt.Errorf("unable to resolve a merge base for %s...%s after fetching base history: %w", req.Range.BaseSHA, req.Range.HeadSHA, errors.Join(attempts...))
 }
 
 func runFetches(ctx context.Context, req *runRequest, fetch gitFetcher) error {

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var hunkHeaderPattern = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
+var hunkHeaderRE = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
 type changeKind string
 
@@ -35,14 +35,8 @@ func (change testFileChange) displayPath() string {
 }
 
 func (change testFileChange) pathspecs() []string {
-	oldPath := change.OldPath
-	if oldPath == "" {
-		oldPath = change.NewPath
-	}
-	newPath := change.NewPath
-	if newPath == "" {
-		newPath = change.OldPath
-	}
+	oldPath := cmp.Or(change.OldPath, change.NewPath)
+	newPath := cmp.Or(change.NewPath, change.OldPath)
 	if oldPath == "" {
 		return []string{newPath}
 	}
@@ -71,13 +65,6 @@ func newSideOnlyHunks(hunks []diffHunk) []diffHunk {
 		trimmed = append(trimmed, hunk)
 	}
 	return trimmed
-}
-
-func readChangeFile(ctx context.Context, cfg config, git gitRunner, revision, filePath string) ([]byte, bool, error) {
-	if filePath == "" || !isRunnableTestFilePath(filePath) {
-		return nil, false, nil
-	}
-	return readFileAtRevision(ctx, cfg, git, revision, filePath)
 }
 
 func listChangedTestFiles(ctx context.Context, cfg config, git gitRunner) ([]testFileChange, error) {
@@ -203,7 +190,7 @@ func parseDiffHunks(diff string) ([]diffHunk, error) {
 	hunks := make([]diffHunk, 0)
 	for line := range strings.Lines(diff) {
 		line = strings.TrimSuffix(line, "\n")
-		matches := hunkHeaderPattern.FindStringSubmatch(line)
+		matches := hunkHeaderRE.FindStringSubmatch(line)
 		if matches == nil {
 			continue
 		}

@@ -27,7 +27,7 @@ func publishPlan(sinks outputSinks, matrix matrixOutput, summary string, stdout 
 		}
 	}
 	if sinks.GitHubOutput != "" {
-		if err := appendGitHubOutput(sinks.GitHubOutput, "matrix", string(matrixData), 0); err != nil {
+		if err := appendGitHubOutput(sinks.GitHubOutput, "matrix", string(matrixData)); err != nil {
 			return err
 		}
 	}
@@ -50,17 +50,21 @@ func marshalMatrix(matrix matrixOutput) ([]byte, error) {
 	return data, nil
 }
 
-func appendGitHubOutput(path, name, value string, outputSizeLimit int) error {
+func appendGitHubOutput(path, name, value string) error {
+	if err := ensureGitHubOutputFits(name, value, defaultGitHubOutputValueLimit); err != nil {
+		return err
+	}
+	return appendFile(path, []byte(name+"="+value+"\n"))
+}
+
+func ensureGitHubOutputFits(name, value string, limit int) error {
 	if strings.ContainsAny(value, "\r\n") {
 		return fmt.Errorf("GitHub output %s must be a single line", name)
 	}
-	if outputSizeLimit == 0 {
-		outputSizeLimit = defaultGitHubOutputValueLimit
+	if len(value) > limit {
+		return fmt.Errorf("GitHub output %s is %d bytes, above the %d byte limit", name, len(value), limit)
 	}
-	if len(value) > outputSizeLimit {
-		return fmt.Errorf("GitHub output %s is %d bytes, above the %d byte limit", name, len(value), outputSizeLimit)
-	}
-	return appendFile(path, []byte(name+"="+value+"\n"))
+	return nil
 }
 
 func writeSummary(path, summary string, stdout io.Writer) error {

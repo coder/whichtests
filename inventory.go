@@ -11,19 +11,99 @@ import (
 )
 
 type inventoryCache struct {
-	cfg       config
-	git       gitRunner
-	fileLists map[string][]string
-	packages  map[string]packageInventory
+	cfg            config
+	git            gitRunner
+	validRevisions map[string]struct{}
+	fileReads      map[revisionFileKey]fileReadResult
+	fileSnapshots  map[revisionFileKey]parsedFileSnapshot
+	fileLists      map[string][]string
+	packages       map[string]packageInventory
+}
+
+type revisionFileKey struct {
+	Revision string
+	Path     string
+}
+
+type fileReadResult struct {
+	Data   []byte
+	Exists bool
 }
 
 func newInventoryCache(cfg config, git gitRunner) *inventoryCache {
 	return &inventoryCache{
-		cfg:       cfg,
-		git:       git,
-		fileLists: map[string][]string{},
-		packages:  map[string]packageInventory{},
+		cfg:            cfg,
+		git:            git,
+		validRevisions: map[string]struct{}{},
+		fileReads:      map[revisionFileKey]fileReadResult{},
+		fileSnapshots:  map[revisionFileKey]parsedFileSnapshot{},
+		fileLists:      map[string][]string{},
+		packages:       map[string]packageInventory{},
 	}
+}
+
+func (cache *inventoryCache) ensureRevisionExists(ctx context.Context, revision string) error {
+	if _, ok := cache.validRevisions[revision]; ok {
+		return nil
+	}
+	if err := ensureRevisionExists(ctx, cache.cfg, cache.git, revision); err != nil {
+		return err
+	}
+	cache.validRevisions[revision] = struct{}{}
+	return nil
+}
+
+func (cache *inventoryCache) readFileAtRevision(ctx context.Context, revision, filePath string) ([]byte, bool, error) {
+	key := revisionFileKey{Revision: revision, Path: cleanGitPath(filePath)}
+	if result, ok := cache.fileReads[key]; ok {
+		return result.Data, result.Exists, nil
+	}
+	if err := cache.ensureRevisionExists(ctx, revision); err != nil {
+		return nil, false, err
+	}
+	fileExists, err := fileExistsAtRevision(ctx, cache.cfg, cache.git, revision, key.Path)
+	if err != nil {
+		return nil, false, err
+	}
+	if !fileExists {
+		cache.fileReads[key] = fileReadResult{}
+		return nil, false, nil
+	}
+
+	result, err := cache.git(ctx, cache.cfg.RepoRoot, "show", revision+":"+key.Path)
+	if err != nil {
+		return nil, false, fmt.Errorf("read %s at %s: %w", key.Path, revision, err)
+	}
+	read := fileReadResult{Data: []byte(result.Stdout), Exists: true}
+	cache.fileReads[key] = read
+	return read.Data, true, nil
+}
+
+func (cache *inventoryCache) parseFileAtRevision(ctx context.Context, revision, filePath string) (parsedFileSnapshot, bool, error) {
+	key := revisionFileKey{Revision: revision, Path: cleanGitPath(filePath)}
+	if snapshot, ok := cache.fileSnapshots[key]; ok {
+		return snapshot, true, nil
+	}
+	data, exists, err := cache.readFileAtRevision(ctx, revision, key.Path)
+	if err != nil {
+		return parsedFileSnapshot{}, false, err
+	}
+	if !exists {
+		return parsedFileSnapshot{}, false, nil
+	}
+	parsed, err := parseSnapshotForPath(key.Path, data)
+	if err != nil {
+		return parsedFileSnapshot{}, true, fmt.Errorf("parse %s at %s: %w", key.Path, revision, err)
+	}
+	cache.fileSnapshots[key] = parsed
+	return parsed, true, nil
+}
+
+func (cache *inventoryCache) parseChangeFileAtRevision(ctx context.Context, revision, filePath string) (parsedFileSnapshot, bool, error) {
+	if filePath == "" || !isRunnableTestFilePath(filePath) {
+		return parsedFileSnapshot{}, false, nil
+	}
+	return cache.parseFileAtRevision(ctx, revision, filePath)
 }
 
 func (cache *inventoryCache) loadPackageInventory(ctx context.Context, revision string, key packageKey) (packageInventory, error) {
@@ -41,21 +121,14 @@ func (cache *inventoryCache) loadPackageInventory(ctx context.Context, revision 
 		Tests: map[string]struct{}{},
 	}
 	for _, filePath := range files {
-		data, exists, err := readFileAtRevision(ctx, cache.cfg, cache.git, revision, filePath)
+		parsed, exists, err := cache.parseFileAtRevision(ctx, revision, filePath)
 		if err != nil {
 			return packageInventory{}, err
 		}
-		if !exists {
+		if !exists || parsed.Snapshot.packageName != key.Name {
 			continue
 		}
-		snapshot, err := parseFileSnapshot(data)
-		if err != nil {
-			return packageInventory{}, fmt.Errorf("parse %s at %s: %w", filePath, revision, err)
-		}
-		if snapshot.packageName != key.Name {
-			continue
-		}
-		for testName := range snapshot.tests {
+		for testName := range parsed.Snapshot.tests {
 			inventory.Tests[testName] = struct{}{}
 		}
 	}
@@ -69,10 +142,7 @@ func (cache *inventoryCache) listTestFilesInDir(ctx context.Context, revision, d
 	if files, ok := cache.fileLists[cacheKey]; ok {
 		return files, nil
 	}
-	pathspec := cleanDir
-	if pathspec == "" {
-		pathspec = "."
-	}
+	pathspec := cmp.Or(cleanDir, ".")
 	result, err := cache.git(ctx, cache.cfg.RepoRoot, "ls-tree", "-r", "-z", "--name-only", revision, "--", pathspec)
 	if err != nil {
 		return nil, err
@@ -119,18 +189,14 @@ func (cache *inventoryCache) loadDirectoryInventories(ctx context.Context, revis
 	}
 	packageNames := map[string]struct{}{}
 	for _, filePath := range files {
-		data, exists, err := readFileAtRevision(ctx, cache.cfg, cache.git, revision, filePath)
+		parsed, exists, err := cache.parseFileAtRevision(ctx, revision, filePath)
 		if err != nil {
 			return nil, err
 		}
 		if !exists {
 			continue
 		}
-		snapshot, err := parseFileSnapshot(data)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s at %s: %w", filePath, revision, err)
-		}
-		packageNames[snapshot.packageName] = struct{}{}
+		packageNames[parsed.Snapshot.packageName] = struct{}{}
 	}
 	keys := make([]packageKey, 0, len(packageNames))
 	for packageName := range packageNames {

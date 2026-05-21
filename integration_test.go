@@ -15,6 +15,7 @@ import (
 func TestRunWithRealGitHandlesAddedFileAtRevision(t *testing.T) {
 	t.Parallel()
 
+	requireGit(t)
 	repoRoot := t.TempDir()
 	runGit(t, repoRoot, "init")
 	runGit(t, repoRoot, "config", "user.email", "test@example.com")
@@ -57,6 +58,7 @@ func TestAdded(t *testing.T) {
 func TestRunWithRealGitHandlesDeletedSetupFile(t *testing.T) {
 	t.Parallel()
 
+	requireGit(t)
 	repoRoot := t.TempDir()
 	runGit(t, repoRoot, "init")
 	runGit(t, repoRoot, "config", "user.email", "test@example.com")

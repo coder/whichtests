@@ -8,12 +8,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseChangeKindAcceptsTypeChanges(t *testing.T) {
+func TestParseChangeKind(t *testing.T) {
 	t.Parallel()
 
-	kind, err := parseChangeKind("T")
-	require.NoError(t, err)
-	require.Equal(t, changeType, kind)
+	tests := []struct {
+		status string
+		want   changeKind
+	}{
+		{status: "A", want: changeAdded},
+		{status: "D", want: changeDeleted},
+		{status: "M", want: changeModified},
+		{status: "R100", want: changeRenamed},
+		{status: "T", want: changeType},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+			kind, err := parseChangeKind(tt.status)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, kind)
+		})
+	}
+	_, err := parseChangeKind("X")
+	require.ErrorContains(t, err, "unsupported diff status")
 }
 
 func TestParseDiffHunks(t *testing.T) {

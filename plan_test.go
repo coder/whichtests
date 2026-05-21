@@ -63,10 +63,13 @@ func TestBuildExecutionPlanRejectsUnsafePackagePaths(t *testing.T) {
 	require.ErrorContains(t, err, "unsafe package path")
 }
 
-func TestBuildExecutionPlanRejectsPackageTraversalSegments(t *testing.T) {
+func TestIsSafePackagePatternAllowsSafeNamesAndRejectsTraversal(t *testing.T) {
 	t.Parallel()
 
-	for _, packagePath := range []string{"./foo/../bar", "./..", "./foo/.."} {
+	for _, packagePath := range []string{".", "./foo_bar", "./foo-bar", "./foo.bar", "./foo/bar_baz"} {
+		require.True(t, isSafePackagePattern(packagePath), packagePath)
+	}
+	for _, packagePath := range []string{"./foo/../bar", "./..", "./foo/..", "../foo", "./foo bar"} {
 		require.False(t, isSafePackagePattern(packagePath), packagePath)
 	}
 }
@@ -117,8 +120,11 @@ func TestBuildExecutionPlanCapsMatrixTargets(t *testing.T) {
 	for _, packagePath := range strings.Fields(overflow.Package) {
 		require.True(t, isSafePackagePattern(packagePath), packagePath)
 	}
-	require.Contains(t, result.Summary.Notes[0], "Matrix target cap")
-	require.Contains(t, result.Summary.Entries[len(result.Summary.Entries)-1].Notes[1], "and 3 more")
+	overflowSummary := result.Summary.Entries[len(result.Summary.Entries)-1]
+	require.Contains(t, overflowSummary.Notes[0], "Matrix target cap")
+	require.Contains(t, overflowSummary.Notes[1], "and 3 more")
+	summary := renderSummary([]string{"pkg00/file_test.go"}, result.Summary)
+	require.Equal(t, 1, strings.Count(summary, "Matrix target cap"))
 }
 
 func TestBuildExecutionPlanKeepsSameNamePackageAndExternalTestsPrecise(t *testing.T) {

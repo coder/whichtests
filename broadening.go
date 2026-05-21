@@ -14,7 +14,7 @@ func broadeningScopeForOldHunk(decls []sharedDecl, candidate lineRange) broadeni
 		if !decl.Range.overlaps(candidate) {
 			continue
 		}
-		scope = max(scope, decl.broadeningScope())
+		scope = max(scope, decl.broadeningScopeOnOldSide())
 	}
 	return scope
 }
@@ -30,7 +30,7 @@ func broadeningScopeForNewHunk(decls []sharedDecl, oldSnapshot *fileSnapshot, ca
 	return scope
 }
 
-func (decl sharedDecl) broadeningScope() broadeningScope {
+func (decl sharedDecl) broadeningScopeOnOldSide() broadeningScope {
 	switch decl.Kind {
 	case sharedDeclInit, sharedDeclTestMain:
 		// Go builds package and package_test files into one test binary.
@@ -52,7 +52,7 @@ func (decl sharedDecl) broadeningScopeOnNewSide(oldSnapshot *fileSnapshot) broad
 	case sharedDeclInit, sharedDeclTestMain:
 		return broadeningDirectory
 	case sharedDeclVar, sharedDeclConst, sharedDeclType, sharedDeclHelper:
-		if oldSnapshot != nil && oldSnapshot.hasSharedKey(decl.Keys) {
+		if oldSnapshot != nil && oldSnapshot.hasAnySharedKey(decl.Keys) {
 			return broadeningPackage
 		}
 	}

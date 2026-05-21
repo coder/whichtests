@@ -30,7 +30,6 @@ type matrixEntry struct {
 
 type summaryReport struct {
 	Entries []summaryEntry
-	Notes   []string
 }
 
 type summaryEntry struct {
@@ -166,7 +165,6 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 				summarizePackages(overflowPackages),
 			},
 		})
-		result.Summary.Notes = append(result.Summary.Notes, note)
 	}
 
 	return result, nil
@@ -246,13 +244,6 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 		totalTests += len(entry.Tests)
 	}
 	_, _ = fmt.Fprintf(&builder, "Selected %d tests across %d package targets.\n\n", totalTests, len(summary.Entries))
-	if len(summary.Notes) > 0 {
-		_, _ = builder.WriteString("Notes:\n")
-		for _, note := range summary.Notes {
-			_, _ = builder.WriteString("- " + note + "\n")
-		}
-		_, _ = builder.WriteString("\n")
-	}
 	for _, entry := range summary.Entries {
 		_, _ = builder.WriteString("### `" + entry.Label + "`\n\n")
 		_, _ = builder.WriteString("Files:\n")

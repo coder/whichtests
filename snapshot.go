@@ -272,7 +272,7 @@ func (snapshot *fileSnapshot) addSharedDecl(decl sharedDecl) {
 	}
 }
 
-func (snapshot *fileSnapshot) hasSharedKey(keys []string) bool {
+func (snapshot *fileSnapshot) hasAnySharedKey(keys []string) bool {
 	for _, key := range keys {
 		if _, ok := snapshot.sharedKeys[key]; ok {
 			return true

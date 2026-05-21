@@ -1035,3 +1035,64 @@ func TestMergePackageSelectionCombinesSamePackageFiles(t *testing.T) {
 	require.Contains(t, selections[key].Files, "pkg/alpha_test.go")
 	require.Contains(t, selections[key].Files, "pkg/beta_test.go")
 }
+
+func TestSelectChangeRequiresOldFileWhenKindExpectsIt(t *testing.T) {
+	t.Parallel()
+
+	oldPath := "pkg/old_test.go"
+	newPath := "pkg/new_test.go"
+	newContent := `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {}
+`
+	tests := []struct {
+		name   string
+		change testFileChange
+		key    string
+	}{
+		{
+			name:   "modified",
+			change: testFileChange{Kind: changeModified, OldPath: oldPath, NewPath: oldPath},
+			key:    oldPath,
+		},
+		{
+			name:   "renamed",
+			change: testFileChange{Kind: changeRenamed, OldPath: oldPath, NewPath: newPath},
+			key:    oldPath + "\x00" + newPath,
+		},
+		{
+			name:   "deleted",
+			change: testFileChange{Kind: changeDeleted, OldPath: oldPath},
+			key:    oldPath,
+		},
+		{
+			name:   "type",
+			change: testFileChange{Kind: changeType, OldPath: oldPath, NewPath: oldPath},
+			key:    oldPath,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			headFiles := map[string]string{}
+			if tt.change.NewPath != "" {
+				headFiles[tt.change.NewPath] = newContent
+			}
+			repo := fakeGitRepo{
+				revisions: map[string]map[string]string{
+					"base": {},
+					"head": headFiles,
+				},
+				diffOutputs: map[string]string{
+					tt.key: diffForChange(lineRange{Start: 5, End: 5}, lineRange{Start: 5, End: 5}),
+				},
+			}
+			cache := newInventoryCache(config{RepoRoot: "/repo", BaseSHA: "base", HeadSHA: "head"}, repo.runner(t))
+			err := selectChange(t.Context(), cache, map[packageKey]*packageSelection{}, tt.change)
+			require.ErrorContains(t, err, "base revision base is missing "+oldPath)
+		})
+	}
+}

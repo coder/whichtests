@@ -52,9 +52,9 @@ func TestPublishPlanWritesEmptyMatrixAndRejectsUnsafeOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `{"include":[]}`, string(matrixData))
 
-	err = appendGitHubOutput(filepath.Join(t.TempDir(), "output.txt"), "matrix", "first\nsecond", 0)
+	err = ensureGitHubOutputFits("matrix", "first\nsecond", defaultGitHubOutputValueLimit)
 	require.ErrorContains(t, err, "single line")
 
-	err = appendGitHubOutput(filepath.Join(t.TempDir(), "output.txt"), "matrix", "too-long", 3)
+	err = ensureGitHubOutputFits("matrix", "too-long", 3)
 	require.ErrorContains(t, err, "above the 3 byte limit")
 }
