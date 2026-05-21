@@ -19,9 +19,6 @@ type matrixOutput struct {
 	Include []matrixEntry `json:"include"`
 }
 
-// matrixEntry.Package is a single safe package token except for overflow rows,
-// where it is a space-separated list of safe package tokens consumed by the
-// flake-go workflow.
 type matrixEntry struct {
 	Package   string `json:"package"`
 	RunRegex  string `json:"run_regex,omitempty"`
@@ -36,7 +33,6 @@ type summaryEntry struct {
 	Label     string
 	Files     []string
 	Tests     []string
-	RunAll    bool
 	TestCount string
 	Notes     []string
 }
@@ -49,8 +45,6 @@ type buildResult struct {
 type executionAccumulator struct {
 	Files     map[string]struct{}
 	Tests     map[string]struct{}
-	Broadened bool
-	RunAll    bool
 	TestCount string
 	Notes     []string
 }
@@ -83,6 +77,9 @@ func selectTestPlan(ctx context.Context, cfg config, git gitRunner) ([]string, b
 func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResult, error) {
 	accumulators := map[string]*executionAccumulator{}
 	for key, selection := range selections {
+		if len(selection.Tests) == 0 {
+			continue
+		}
 		packagePath := packagePattern(key.Dir)
 		if !isSafePackagePattern(packagePath) {
 			return buildResult{}, fmt.Errorf("unsafe package path %q", packagePath)
@@ -96,7 +93,6 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 			}
 			accumulators[packagePath] = entry
 		}
-		entry.Broadened = entry.Broadened || selection.Broadened
 		maps.Copy(entry.Files, selection.Files)
 		maps.Copy(entry.Tests, selection.Tests)
 	}
@@ -107,20 +103,10 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 		entry := accumulators[packagePath]
 		tests := slices.Sorted(maps.Keys(entry.Tests))
 		files := slices.Sorted(maps.Keys(entry.Files))
-		if entry.Broadened && len(tests) > maxBroadenedTests {
-			entry.RunAll = true
-			entry.TestCount = runOnceTestCount
-			entry.Notes = append(entry.Notes, fmt.Sprintf("Package-wide broadening selected %d tests, above the %d-test cap, so this target will run all tests once.", len(tests), maxBroadenedTests))
-		}
 		if unsafeTestCount := unsafeRunRegexTestCount(tests); unsafeTestCount > 0 {
-			entry.RunAll = true
-			entry.TestCount = runOnceTestCount
-			entry.Notes = append(entry.Notes, fmt.Sprintf("Selected %d test names that cannot be passed safely through RUN, so this target will run all tests once.", unsafeTestCount))
+			return buildResult{}, fmt.Errorf("selected %d test names for %s that cannot be passed safely through RUN", unsafeTestCount, packagePath)
 		}
-		runRegex := ""
-		if !entry.RunAll {
-			runRegex = buildRunRegex(tests)
-		}
+		runRegex := buildRunRegex(tests)
 		result.Matrix.Include = append(result.Matrix.Include, matrixEntry{
 			Package:   packagePath,
 			RunRegex:  runRegex,
@@ -130,60 +116,12 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection) (buildResul
 			Label:     packagePath,
 			Files:     files,
 			Tests:     tests,
-			RunAll:    entry.RunAll,
 			TestCount: entry.TestCount,
 			Notes:     entry.Notes,
 		})
 	}
 
-	if len(result.Matrix.Include) > maxMatrixEntries {
-		keep := maxMatrixEntries - 1
-		overflowPackages := make([]string, 0, len(result.Matrix.Include)-keep)
-		overflowFiles := map[string]struct{}{}
-		for _, entry := range result.Matrix.Include[keep:] {
-			overflowPackages = append(overflowPackages, entry.Package)
-		}
-		for _, entry := range result.Summary.Entries[keep:] {
-			for _, filePath := range entry.Files {
-				overflowFiles[filePath] = struct{}{}
-			}
-		}
-		note := fmt.Sprintf("Matrix target cap %d hit. Collapsed %d additional packages into one overflow target that runs once.", maxMatrixEntries, len(overflowPackages))
-		result.Matrix.Include = result.Matrix.Include[:keep]
-		result.Matrix.Include = append(result.Matrix.Include, matrixEntry{
-			Package:   strings.Join(overflowPackages, " "),
-			TestCount: runOnceTestCount,
-		})
-		result.Summary.Entries = result.Summary.Entries[:keep]
-		result.Summary.Entries = append(result.Summary.Entries, summaryEntry{
-			Label:     fmt.Sprintf("overflow target (%d packages)", len(overflowPackages)),
-			Files:     slices.Sorted(maps.Keys(overflowFiles)),
-			RunAll:    true,
-			TestCount: runOnceTestCount,
-			Notes: []string{
-				note,
-				summarizePackages(overflowPackages),
-			},
-		})
-	}
-
 	return result, nil
-}
-
-func summarizePackages(packages []string) string {
-	display := packages
-	if len(display) > maxOverflowSummaries {
-		display = display[:maxOverflowSummaries]
-	}
-	quoted := make([]string, 0, len(display))
-	for _, packagePath := range display {
-		quoted = append(quoted, "`"+packagePath+"`")
-	}
-	note := "Packages: " + strings.Join(quoted, ", ")
-	if len(packages) > len(display) {
-		note += fmt.Sprintf(", and %d more.", len(packages)-len(display))
-	}
-	return note
 }
 
 func isSafePackagePattern(packagePath string) bool {
@@ -256,17 +194,6 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 				_, _ = builder.WriteString("- " + note + "\n")
 			}
 		}
-		if entry.RunAll {
-			_, _ = builder.WriteString("\nRuns all tests in this target " + countDescription(entry.TestCount) + ".\n")
-			if len(entry.Tests) > 0 {
-				_, _ = builder.WriteString("\nAttributed tests:\n")
-				for _, testName := range entry.Tests {
-					_, _ = builder.WriteString("- `" + testName + "`\n")
-				}
-			}
-			_, _ = builder.WriteString("\n")
-			continue
-		}
 		_, _ = builder.WriteString("\nTests:\n")
 		for _, testName := range entry.Tests {
 			_, _ = builder.WriteString("- `" + testName + "`\n")
@@ -278,11 +205,4 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 
 func renderSummaryFilePath(filePath string) string {
 	return strconv.QuoteToASCII(filePath)
-}
-
-func countDescription(count string) string {
-	if count == "1" {
-		return "once"
-	}
-	return count + " times"
 }

@@ -1,13 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"go/ast"
 	"go/parser"
-	"go/printer"
 	"go/token"
-	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -16,26 +12,6 @@ import (
 type fileSnapshot struct {
 	packageName string
 	tests       map[string]lineRange
-	shared      []sharedDecl
-	sharedKeys  map[string]struct{}
-}
-
-type sharedDeclKind uint8
-
-const (
-	sharedDeclImport sharedDeclKind = iota + 1
-	sharedDeclVar
-	sharedDeclConst
-	sharedDeclType
-	sharedDeclHelper
-	sharedDeclInit
-	sharedDeclTestMain
-)
-
-type sharedDecl struct {
-	Range lineRange
-	Kind  sharedDeclKind
-	Keys  []string
 }
 
 func parseFileSnapshot(data []byte) (fileSnapshot, error) {
@@ -49,43 +25,15 @@ func parseFileSnapshot(data []byte) (fileSnapshot, error) {
 	snapshot := fileSnapshot{
 		packageName: file.Name.Name,
 		tests:       map[string]lineRange{},
-		sharedKeys:  map[string]struct{}{},
 	}
 	for _, decl := range file.Decls {
-		rangeForDecl := nodeRange(fset, decl)
 		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok {
-			genDecl, ok := decl.(*ast.GenDecl)
-			if !ok {
-				snapshot.addSharedDecl(sharedDecl{Range: rangeForDecl, Kind: sharedDeclHelper})
-				continue
-			}
-			snapshot.addSharedDecl(classifyGenDecl(rangeForDecl, genDecl))
-			continue
-		}
-		if funcDecl.Name == nil {
-			snapshot.addSharedDecl(sharedDecl{Range: rangeForDecl, Kind: sharedDeclHelper})
+		if !ok || funcDecl.Name == nil {
 			continue
 		}
 
-		name := funcDecl.Name.Name
-		switch {
-		case name == "TestMain":
-			snapshot.addSharedDecl(sharedDecl{
-				Range: rangeForDecl,
-				Kind:  sharedDeclTestMain,
-				Keys:  []string{"func:TestMain"},
-			})
-		case name == "init":
-			snapshot.addSharedDecl(sharedDecl{Range: rangeForDecl, Kind: sharedDeclInit})
-		case isTopLevelTestFunc(funcDecl, testingDotImport), isTopLevelFuzzFunc(funcDecl, testingDotImport), isTopLevelExampleFunc(funcDecl):
-			snapshot.tests[name] = rangeForDecl
-		default:
-			snapshot.addSharedDecl(sharedDecl{
-				Range: rangeForDecl,
-				Kind:  sharedDeclHelper,
-				Keys:  []string{funcIdentity(fset, funcDecl)},
-			})
+		if isTopLevelTestFunc(funcDecl, testingDotImport) || isTopLevelFuzzFunc(funcDecl, testingDotImport) || isTopLevelExampleFunc(funcDecl) {
+			snapshot.tests[funcDecl.Name.Name] = nodeRange(fset, decl)
 		}
 	}
 	return snapshot, nil
@@ -104,66 +52,6 @@ func hasTestingDotImport(file *ast.File) bool {
 		}
 	}
 	return false
-}
-
-func classifyGenDecl(rangeForDecl lineRange, decl *ast.GenDecl) sharedDecl {
-	shared := sharedDecl{Range: rangeForDecl}
-	switch decl.Tok {
-	case token.IMPORT:
-		shared.Kind = sharedDeclImport
-	case token.VAR:
-		shared.Kind = sharedDeclVar
-		shared.Keys = genDeclKeys("var", decl.Specs)
-	case token.CONST:
-		shared.Kind = sharedDeclConst
-		shared.Keys = genDeclKeys("const", decl.Specs)
-	case token.TYPE:
-		shared.Kind = sharedDeclType
-		shared.Keys = genDeclKeys("type", decl.Specs)
-	default:
-		shared.Kind = sharedDeclHelper
-	}
-	return shared
-}
-
-func genDeclKeys(prefix string, specs []ast.Spec) []string {
-	keys := make([]string, 0, len(specs))
-	for _, spec := range specs {
-		switch typed := spec.(type) {
-		case *ast.TypeSpec:
-			if typed.Name == nil || typed.Name.Name == "_" {
-				continue
-			}
-			keys = append(keys, prefix+":"+typed.Name.Name)
-		case *ast.ValueSpec:
-			for _, name := range typed.Names {
-				if name == nil || name.Name == "_" {
-					continue
-				}
-				keys = append(keys, prefix+":"+name.Name)
-			}
-		}
-	}
-	slices.Sort(keys)
-	return keys
-}
-
-func funcIdentity(fset *token.FileSet, fn *ast.FuncDecl) string {
-	if fn.Name == nil {
-		return ""
-	}
-	if fn.Recv == nil || len(fn.Recv.List) == 0 {
-		return "func:" + fn.Name.Name
-	}
-	return "method:" + exprString(fset, fn.Recv.List[0].Type) + "." + fn.Name.Name
-}
-
-func exprString(fset *token.FileSet, expr ast.Expr) string {
-	var buffer bytes.Buffer
-	if err := printer.Fprint(&buffer, fset, expr); err != nil {
-		return fmt.Sprintf("%T", expr)
-	}
-	return buffer.String()
 }
 
 func nodeRange(fset *token.FileSet, node ast.Node) lineRange {
@@ -260,23 +148,4 @@ func pointerIdentName(expr ast.Expr) (string, bool) {
 		return "", false
 	}
 	return ident.Name, true
-}
-
-func (snapshot *fileSnapshot) addSharedDecl(decl sharedDecl) {
-	snapshot.shared = append(snapshot.shared, decl)
-	for _, key := range decl.Keys {
-		if key == "" {
-			continue
-		}
-		snapshot.sharedKeys[key] = struct{}{}
-	}
-}
-
-func (snapshot *fileSnapshot) hasAnySharedKey(keys []string) bool {
-	for _, key := range keys {
-		if _, ok := snapshot.sharedKeys[key]; ok {
-			return true
-		}
-	}
-	return false
 }

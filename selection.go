@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"slices"
 )
 
 type packageKey struct {
@@ -19,11 +18,9 @@ type packageInventory struct {
 }
 
 type packageSelection struct {
-	Key           packageKey
-	Tests         map[string]struct{}
-	Files         map[string]struct{}
-	Broadened     bool
-	DirectoryWide bool
+	Key   packageKey
+	Tests map[string]struct{}
+	Files map[string]struct{}
 }
 
 type parsedFileSnapshot struct {
@@ -137,24 +134,11 @@ func parseSnapshotForPath(filePath string, data []byte) (parsedFileSnapshot, err
 	}, nil
 }
 
-func mergeSelection(ctx context.Context, cache *inventoryCache, selections map[packageKey]*packageSelection, selection *packageSelection) error {
-	if selection == nil {
+func mergeSelection(_ context.Context, _ *inventoryCache, selections map[packageKey]*packageSelection, selection *packageSelection) error {
+	if selection == nil || len(selection.Tests) == 0 {
 		return nil
 	}
-	if !selection.DirectoryWide {
-		if len(selection.Tests) > 0 {
-			mergePackageSelection(selections, selection)
-		}
-		return nil
-	}
-
-	expanded, err := cache.directoryWideSelections(ctx, cache.cfg.HeadSHA, selection.Key.Dir, selection.Files)
-	if err != nil {
-		return fmt.Errorf("load directory-wide inventory for %s: %w", packagePattern(selection.Key.Dir), err)
-	}
-	for _, expandedSelection := range expanded {
-		mergePackageSelection(selections, expandedSelection)
-	}
+	mergePackageSelection(selections, selection)
 	return nil
 }
 
@@ -168,32 +152,13 @@ func mergePackageSelection(selections map[packageKey]*packageSelection, selectio
 		}
 		selections[selection.Key] = merged
 	}
-	merged.Broadened = merged.Broadened || selection.Broadened
 	maps.Copy(merged.Files, selection.Files)
 	maps.Copy(merged.Tests, selection.Tests)
 }
 
 func selectTestsFromHunks(change testFileChange, oldSnapshot *fileSnapshot, newSnapshot fileSnapshot, newInventory packageInventory, hunks []diffHunk) *packageSelection {
-	if oldSnapshot == nil && needsOldSnapshot(hunks) {
-		return allPackageTestsSelection(newInventory, change.displayPath())
-	}
-
 	selected := map[string]struct{}{}
 	for _, hunk := range hunks {
-		if oldSnapshot != nil {
-			switch broadeningScopeForOldHunk(oldSnapshot.shared, hunk.Old) {
-			case broadeningDirectory:
-				return allDirectoryTestsSelection(newInventory.Key.Dir, change.displayPath())
-			case broadeningPackage:
-				return allPackageTestsSelection(newInventory, change.displayPath())
-			}
-		}
-		switch broadeningScopeForNewHunk(newSnapshot.shared, oldSnapshot, hunk.New) {
-		case broadeningDirectory:
-			return allDirectoryTestsSelection(newInventory.Key.Dir, change.displayPath())
-		case broadeningPackage:
-			return allPackageTestsSelection(newInventory, change.displayPath())
-		}
 		addMatchingTests(selected, newSnapshot.tests, hunk.New)
 		if oldSnapshot == nil {
 			continue
@@ -220,12 +185,6 @@ func selectTestsFromHunks(change testFileChange, oldSnapshot *fileSnapshot, newS
 func selectSourceRemoval(change testFileChange, oldSnapshot fileSnapshot, inventory packageInventory, hunks []diffHunk) *packageSelection {
 	selected := map[string]struct{}{}
 	for _, hunk := range hunks {
-		switch broadeningScopeForOldHunk(oldSnapshot.shared, hunk.Old) {
-		case broadeningDirectory:
-			return allDirectoryTestsSelection(inventory.Key.Dir, change.displayPath())
-		case broadeningPackage:
-			return allPackageTestsSelection(inventory, change.displayPath())
-		}
 		for name, declRange := range oldSnapshot.tests {
 			if !declRange.overlaps(hunk.Old) {
 				continue
@@ -243,38 +202,6 @@ func selectSourceRemoval(change testFileChange, oldSnapshot fileSnapshot, invent
 		Tests: selected,
 		Files: map[string]struct{}{change.displayPath(): {}},
 	}
-}
-
-func allPackageTestsSelection(inventory packageInventory, filePath string) *packageSelection {
-	return allPackageTestsSelectionForFiles(inventory, map[string]struct{}{filePath: {}})
-}
-
-func allPackageTestsSelectionForFiles(inventory packageInventory, files map[string]struct{}) *packageSelection {
-	selection := &packageSelection{
-		Key:       inventory.Key,
-		Tests:     map[string]struct{}{},
-		Files:     files,
-		Broadened: true,
-	}
-	maps.Copy(selection.Tests, inventory.Tests)
-	if len(selection.Tests) == 0 {
-		return nil
-	}
-	return selection
-}
-
-func allDirectoryTestsSelection(dir, filePath string) *packageSelection {
-	return &packageSelection{
-		Key:           packageKey{Dir: dir},
-		Files:         map[string]struct{}{filePath: {}},
-		DirectoryWide: true,
-	}
-}
-
-func needsOldSnapshot(hunks []diffHunk) bool {
-	return slices.ContainsFunc(hunks, func(hunk diffHunk) bool {
-		return hunk.Old.hasLines()
-	})
 }
 
 func addMatchingTests(selected map[string]struct{}, tests map[string]lineRange, candidate lineRange) {

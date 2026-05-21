@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -173,22 +172,6 @@ func (cache *inventoryCache) listTestFilesInDir(ctx context.Context, revision, d
 	slices.Sort(files)
 	cache.fileLists[cacheKey] = files
 	return files, nil
-}
-
-func (cache *inventoryCache) directoryWideSelections(ctx context.Context, revision, dir string, files map[string]struct{}) ([]*packageSelection, error) {
-	inventories, err := cache.loadDirectoryInventories(ctx, revision, dir)
-	if err != nil {
-		return nil, err
-	}
-	selections := make([]*packageSelection, 0, len(inventories))
-	for _, inventory := range inventories {
-		selection := allPackageTestsSelectionForFiles(inventory, maps.Clone(files))
-		if selection == nil {
-			continue
-		}
-		selections = append(selections, selection)
-	}
-	return selections, nil
 }
 
 func (cache *inventoryCache) loadDirectoryInventories(ctx context.Context, revision, dir string) ([]packageInventory, error) {

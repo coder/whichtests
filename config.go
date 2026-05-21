@@ -9,13 +9,6 @@ const (
 	defaultHeadSHA    = "HEAD"
 	defaultOutSummary = "-"
 	defaultTestCount  = "10"
-	runOnceTestCount  = "1"
-
-	// Package-wide and matrix-wide caps keep the detector cheap by
-	// running broad fallback targets once instead of repeatedly.
-	maxMatrixEntries     = 20
-	maxBroadenedTests    = 50
-	maxOverflowSummaries = 10
 )
 
 type config struct {

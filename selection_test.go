@@ -259,15 +259,13 @@ func TestAlpha(t *T) {
 	)
 
 	tests := []struct {
-		name              string
-		oldData           []byte
-		newData           []byte
-		inventory         packageInventory
-		hunks             []diffHunk
-		wantTests         []string
-		wantBroadened     bool
-		wantDirectoryWide bool
-		wantNoSelection   bool
+		name            string
+		oldData         []byte
+		newData         []byte
+		inventory       packageInventory
+		hunks           []diffHunk
+		wantTests       []string
+		wantNoSelection bool
 	}{
 		{
 			name:    "body change selects only changed test",
@@ -296,7 +294,7 @@ func TestAlpha(t *T) {
 			wantTests: []string{"TestBeta"},
 		},
 		{
-			name:    "existing helper change broadens across package",
+			name:    "existing helper change selects no tests",
 			oldData: []byte(selectionFixture05),
 			newData: []byte(selectionFixture06),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -314,11 +312,10 @@ func TestBeta(t *testing.T) {
 				Old: singleLineRange(t, selectionFixture05, `t.Log("before helper")`),
 				New: singleLineRange(t, selectionFixture06, `t.Log("changed helper")`),
 			}},
-			wantTests:     []string{"TestAlpha", "TestBeta"},
-			wantBroadened: true,
+			wantNoSelection: true,
 		},
 		{
-			name:    "package variable change broadens across package",
+			name:    "package variable change selects no tests",
 			oldData: []byte(selectionFixture07),
 			newData: []byte(selectionFixture08),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -336,11 +333,10 @@ func TestBeta(t *testing.T) {
 				Old: singleLineRange(t, selectionFixture07, "var packageValue = 1"),
 				New: singleLineRange(t, selectionFixture08, "var packageValue = 2"),
 			}},
-			wantTests:     []string{"TestAlpha", "TestBeta"},
-			wantBroadened: true,
+			wantNoSelection: true,
 		},
 		{
-			name:    "additive import broadens package",
+			name:    "additive import selects no tests",
 			oldData: []byte(selectionFixture09),
 			newData: []byte(selectionFixture10),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -350,8 +346,7 @@ func TestBeta(t *testing.T) {
 				Old: emptyRangeAt(singleLineRange(t, selectionFixture09, `"testing"`).Start),
 				New: singleLineRange(t, selectionFixture10, `"fmt"`),
 			}},
-			wantTests:     []string{"TestAlpha", "TestBeta"},
-			wantBroadened: true,
+			wantNoSelection: true,
 		},
 		{
 			name:    "additive helper with new test stays narrow",
@@ -370,7 +365,7 @@ func TestBeta(t *testing.T) {
 			wantTests: []string{"TestBeta"},
 		},
 		{
-			name:    "removed import broadens across package",
+			name:    "removed import selects no tests",
 			oldData: []byte(selectionFixture12),
 			newData: []byte(selectionFixture13),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -381,11 +376,10 @@ func TestBeta(t *testing.T) {
 				Old: singleLineRange(t, selectionFixture12, `"fmt"`),
 				New: emptyRangeAt(singleLineRange(t, selectionFixture13, `"testing"`).Start),
 			}},
-			wantTests:     []string{"TestAlpha", "TestBeta"},
-			wantBroadened: true,
+			wantNoSelection: true,
 		},
 		{
-			name:    "TestMain broadens across sibling files in same package",
+			name:    "TestMain change selects no tests",
 			oldData: []byte(selectionFixture15),
 			newData: []byte(selectionFixture16),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -396,10 +390,10 @@ func TestBeta(t *testing.T) {
 				Old: singleLineRange(t, selectionFixture15, `os.Exit(m.Run())`),
 				New: singleLineRange(t, selectionFixture16, `fmt.Println("setup")`),
 			}},
-			wantDirectoryWide: true,
+			wantNoSelection: true,
 		},
 		{
-			name:    "init broadens across sibling files in same package",
+			name:    "init change selects no tests",
 			oldData: []byte(selectionFixture17),
 			newData: []byte(selectionFixture18),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -410,10 +404,10 @@ func TestBeta(t *testing.T) {
 				Old: singleLineRange(t, selectionFixture17, `register("before")`),
 				New: singleLineRange(t, selectionFixture18, `register("after")`),
 			}},
-			wantDirectoryWide: true,
+			wantNoSelection: true,
 		},
 		{
-			name:    "deleted helper uses old snapshot to broaden package",
+			name:    "deleted helper selects no tests",
 			oldData: []byte(selectionFixture19),
 			newData: []byte(selectionFixture03),
 			inventory: mustPackageInventory(t, map[string]string{
@@ -427,8 +421,7 @@ func TestBeta(t *testing.T) {
 				),
 				New: emptyRangeAt(singleLineRange(t, selectionFixture03, `func TestAlpha(t *testing.T) {`).Start),
 			}},
-			wantTests:     []string{"TestAlpha", "TestBeta"},
-			wantBroadened: true,
+			wantNoSelection: true,
 		},
 		{
 			name:    "brand-new file with additive hunk selects only new tests",
@@ -473,19 +466,12 @@ func TestBeta(t *testing.T) {
 				return
 			}
 			require.NotNil(t, selection)
-			require.Equal(t, tt.wantDirectoryWide, selection.DirectoryWide)
-			if tt.wantDirectoryWide {
-				require.Empty(t, selection.Tests)
-				require.Contains(t, selection.Files, changedPath)
-			} else {
-				require.Equal(t, tt.wantTests, selectionNames(selection))
-			}
-			require.Equal(t, tt.wantBroadened, selection.Broadened)
+			require.Equal(t, tt.wantTests, selectionNames(selection))
 		})
 	}
 }
 
-func TestSelectTestsForSnapshotsTreatsTestMethodsAsSharedHelpers(t *testing.T) {
+func TestSelectTestsForSnapshotsIgnoresTestMethods(t *testing.T) {
 	t.Parallel()
 
 	change := testFileChange{Kind: changeModified, OldPath: "pkg/changed_test.go", NewPath: "pkg/changed_test.go"}
@@ -534,9 +520,7 @@ func TestBeta(t *testing.T) {
 		Old: singleLineRange(t, string(oldData), `t.Log("before method")`),
 		New: singleLineRange(t, string(newData), `t.Log("changed method")`),
 	}})
-	require.NotNil(t, selection)
-	require.Equal(t, []string{"TestAlpha", "TestBeta"}, selectionNames(selection))
-	require.True(t, selection.Broadened)
+	require.Nil(t, selection)
 }
 
 func TestSelectTestsForSnapshotsAdditiveSharedDeclsStayNarrow(t *testing.T) {
@@ -584,12 +568,11 @@ func TestBeta(t *testing.T) {
 			}})
 			require.NotNil(t, selection)
 			require.Equal(t, []string{"TestBeta"}, selectionNames(selection))
-			require.False(t, selection.Broadened)
 		})
 	}
 }
 
-func TestSelectTestsForSnapshotsBroadensAddedImports(t *testing.T) {
+func TestSelectTestsForSnapshotsIgnoresAddedImports(t *testing.T) {
 	t.Parallel()
 
 	change := testFileChange{Kind: changeModified, OldPath: "pkg/changed_test.go", NewPath: "pkg/changed_test.go"}
@@ -629,9 +612,66 @@ func TestBeta(t *testing.T) {
 		Old: emptyRangeAt(3),
 		New: singleLineRange(t, string(newData), `_ "example.com/sideeffect"`),
 	}})
+	require.Nil(t, selection)
+}
+
+func TestSelectTestsForSnapshotsAddedImportWithNewTestSelectsOnlyNewTest(t *testing.T) {
+	t.Parallel()
+
+	change := testFileChange{Kind: changeModified, OldPath: "pkg/changed_test.go", NewPath: "pkg/changed_test.go"}
+	oldData := []byte(`package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+`)
+	newData := []byte(`package sample
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestAlpha(t *testing.T) {
+	t.Log("alpha")
+}
+
+func TestBeta(t *testing.T) {
+	if !slices.Contains([]string{"beta"}, "beta") {
+		t.Fatal("missing beta")
+	}
+}
+`)
+	inventory := mustPackageInventory(t, map[string]string{
+		"pkg/changed_test.go": string(newData),
+		"pkg/sibling_test.go": `package sample
+
+import "testing"
+
+func TestGamma(t *testing.T) {
+	t.Log("gamma")
+}
+`,
+	})
+	oldSnapshot := mustOptionalFileSnapshot(t, oldData)
+	newSnapshot := mustFileSnapshot(t, newData)
+	selection := selectTestsFromHunks(change, oldSnapshot, newSnapshot, inventory, []diffHunk{
+		{
+			Old: emptyRangeAt(3),
+			New: singleLineRange(t, string(newData), `"slices"`),
+		},
+		{
+			Old: emptyRangeAt(7),
+			New: rangeSpan(
+				singleLineRange(t, string(newData), "func TestBeta(t *testing.T) {"),
+				singleLineRange(t, string(newData), `t.Fatal("missing beta")`),
+			),
+		},
+	})
 	require.NotNil(t, selection)
-	require.Equal(t, []string{"TestAlpha", "TestBeta"}, selectionNames(selection))
-	require.True(t, selection.Broadened)
+	require.Equal(t, []string{"TestBeta"}, selectionNames(selection))
 }
 
 func TestMergePackageSelectionCombinesSamePackageFiles(t *testing.T) {
@@ -645,14 +685,12 @@ func TestMergePackageSelectionCombinesSamePackageFiles(t *testing.T) {
 		Files: map[string]struct{}{"pkg/alpha_test.go": {}},
 	})
 	mergePackageSelection(selections, &packageSelection{
-		Key:       key,
-		Tests:     map[string]struct{}{"TestBeta": {}},
-		Files:     map[string]struct{}{"pkg/beta_test.go": {}},
-		Broadened: true,
+		Key:   key,
+		Tests: map[string]struct{}{"TestBeta": {}},
+		Files: map[string]struct{}{"pkg/beta_test.go": {}},
 	})
 
 	require.Equal(t, []string{"TestAlpha", "TestBeta"}, selectionNames(selections[key]))
-	require.True(t, selections[key].Broadened)
 	require.Contains(t, selections[key].Files, "pkg/alpha_test.go")
 	require.Contains(t, selections[key].Files, "pkg/beta_test.go")
 }

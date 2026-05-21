@@ -55,7 +55,7 @@ func TestAdded(t *testing.T) {
 	require.Contains(t, string(summary), "TestAdded")
 }
 
-func TestRunWithRealGitHandlesDeletedSetupFile(t *testing.T) {
+func TestRunWithRealGitIgnoresDeletedSetupFile(t *testing.T) {
 	t.Parallel()
 
 	requireGit(t)
@@ -98,14 +98,13 @@ func TestAlpha(t *testing.T) {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
-	require.Len(t, matrix.Include, 1)
-	require.Equal(t, "./pkg", matrix.Include[0].Package)
-	require.Equal(t, "^(TestAlpha)(/.*)?$", matrix.Include[0].RunRegex)
+	require.Empty(t, matrix.Include)
 
 	summary, err := os.ReadFile(summaryPath)
 	require.NoError(t, err)
 	require.Contains(t, string(summary), "pkg/setup_test.go")
-	require.Contains(t, string(summary), "TestAlpha")
+	require.Contains(t, string(summary), "no runnable top-level tests were selected")
+	require.NotContains(t, string(summary), "TestAlpha")
 }
 
 func TestEnsureRangeAvailableWithRealGitFetchesMovedBase(t *testing.T) {

@@ -166,7 +166,7 @@ func TestAlpha(t *testing.T) {
 	require.Contains(t, stderr.String(), "selected 1 package targets")
 }
 
-func TestRunBroadensTestMainAcrossPackageAndPackageTest(t *testing.T) {
+func TestRunIgnoresTestMainChanges(t *testing.T) {
 	t.Parallel()
 
 	repoRoot := t.TempDir()
@@ -238,14 +238,13 @@ func TestMain(m *testing.M) {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
-	require.Len(t, matrix.Include, 1)
-	require.Equal(t, "./pkg", matrix.Include[0].Package)
-	require.Equal(t, "^(TestExternal|TestInternal)(/.*)?$", matrix.Include[0].RunRegex)
+	require.Empty(t, matrix.Include)
 
 	summary, err := os.ReadFile(summaryPath)
 	require.NoError(t, err)
-	require.Contains(t, string(summary), "TestInternal")
-	require.Contains(t, string(summary), "TestExternal")
+	require.Contains(t, string(summary), "no runnable top-level tests were selected")
+	require.NotContains(t, string(summary), "TestInternal")
+	require.NotContains(t, string(summary), "TestExternal")
 }
 
 func TestRunHandlesRename(t *testing.T) {
@@ -488,7 +487,7 @@ func TestPlatform(t *testing.T) {
 	require.Equal(t, "^(TestPlatform)(/.*)?$", matrix.Include[0].RunRegex)
 }
 
-func TestRunHandlesDeletedSetupFile(t *testing.T) {
+func TestRunIgnoresDeletedSetupFile(t *testing.T) {
 	t.Parallel()
 
 	repoRoot := t.TempDir()
@@ -538,16 +537,16 @@ func TestAlpha(t *testing.T) {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
-	require.Len(t, matrix.Include, 1)
-	require.Equal(t, "^(TestAlpha)(/.*)?$", matrix.Include[0].RunRegex)
+	require.Empty(t, matrix.Include)
 
 	summary, err := os.ReadFile(summaryPath)
 	require.NoError(t, err)
 	require.Contains(t, string(summary), setupPath)
-	require.Contains(t, string(summary), "TestAlpha")
+	require.Contains(t, string(summary), "no runnable top-level tests were selected")
+	require.NotContains(t, string(summary), "TestAlpha")
 }
 
-func TestRunBroadensInitAcrossPackageAndPackageTest(t *testing.T) {
+func TestRunIgnoresInitChanges(t *testing.T) {
 	t.Parallel()
 
 	repoRoot := t.TempDir()
@@ -607,8 +606,7 @@ func init() {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
-	require.Len(t, matrix.Include, 1)
-	require.Equal(t, "^(TestExternal|TestInternal)(/.*)?$", matrix.Include[0].RunRegex)
+	require.Empty(t, matrix.Include)
 }
 
 func TestRunHandlesCrossDirectoryRenamePrecisely(t *testing.T) {
@@ -672,7 +670,7 @@ func TestMoved(t *testing.T) {
 	require.Equal(t, "^(TestMoved)(/.*)?$", matrix.Include[0].RunRegex)
 }
 
-func TestRunHandlesCrossDirectoryRenameSourceFallout(t *testing.T) {
+func TestRunIgnoresCrossDirectoryHelperRenameSource(t *testing.T) {
 	t.Parallel()
 
 	repoRoot := t.TempDir()
@@ -738,7 +736,5 @@ func TestNewStable(t *testing.T) {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
-	require.Len(t, matrix.Include, 1)
-	require.Equal(t, "./oldpkg", matrix.Include[0].Package)
-	require.Equal(t, "^(TestOldStable)(/.*)?$", matrix.Include[0].RunRegex)
+	require.Empty(t, matrix.Include)
 }
