@@ -11,6 +11,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRunCommandGitHubActionsRejectsNegativeSelectedTestLimit(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	neverGit := func(_ context.Context, _ string, _ ...string) (gitResult, error) {
+		return gitResult{}, errors.New("git should not be called")
+	}
+
+	err := runCommand(t.Context(), commandConfig{
+		config:        config{MaxSelectedTests: -1},
+		GitHubActions: true,
+	}, &stdout, &stderr, neverGit, nil)
+	require.EqualError(t, err, "--max-selected-tests must not be negative")
+}
+
 func TestGitHubActionsRunRequestPullRequest(t *testing.T) {
 	eventPath := writeGitHubEvent(t, `{
 		"pull_request": {
@@ -30,7 +46,7 @@ func TestGitHubActionsRunRequestPullRequest(t *testing.T) {
 	t.Setenv("UNRELATED_EXTRA_ENV", "ignored")
 
 	req, err := githubActionsRunRequest(t.Context(), commandConfig{
-		config: config{RepoRoot: "/repo", OutMatrix: "matrix.json"},
+		config: config{RepoRoot: "/repo", OutMatrix: "matrix.json", MaxSelectedTests: 100},
 	}, fakeGitRepo{headSHA: "head123"}.runner(t))
 	require.NoError(t, err)
 	require.Equal(t, "/repo", req.RepoRoot)
@@ -42,6 +58,7 @@ func TestGitHubActionsRunRequestPullRequest(t *testing.T) {
 	require.Equal(t, "matrix.json", req.Sinks.OutMatrix)
 	require.Equal(t, "output.txt", req.Sinks.GitHubOutput)
 	require.Equal(t, "summary.md", req.Sinks.GitHubStepSummary)
+	require.Equal(t, 100, req.Plan.MaxSelectedTests)
 }
 
 func TestGitHubActionsRunRequestVerifiesPullRequestHead(t *testing.T) {
@@ -176,7 +193,7 @@ func TestAlpha(t *testing.T) {
 
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"include":[{"package":"./pkg","run_regex":"^(TestAlpha)(/.*)?$","test_count":"10"}]}`, string(matrixData))
+	require.JSONEq(t, `{"selected_test_count":1,"include":[{"package":"./pkg","run_regex":"^(TestAlpha)(/.*)?$","test_count":"10"}]}`, string(matrixData))
 	outputData, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
 	require.Equal(t, "matrix="+string(bytes.TrimSpace(matrixData))+"\n", string(outputData))

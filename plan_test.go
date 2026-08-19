@@ -208,3 +208,41 @@ func TestBuildExecutionPlanCoalesceWithNoSelectionsEmitsEmptyMatrix(t *testing.T
 	require.Empty(t, result.Matrix.Include)
 	require.Empty(t, result.Summary.Entries)
 }
+
+func TestBuildExecutionPlanSkipsMatrixAboveSelectedTestLimit(t *testing.T) {
+	t.Parallel()
+
+	selections := map[packageKey]*packageSelection{
+		{Dir: "pkgone", Name: "one"}: {
+			Key:   packageKey{Dir: "pkgone", Name: "one"},
+			Tests: map[string]struct{}{"TestAlpha": {}, "TestBeta": {}},
+			Files: map[string]struct{}{"pkgone/one_test.go": {}},
+		},
+		{Dir: "pkgtwo", Name: "two"}: {
+			Key:   packageKey{Dir: "pkgtwo", Name: "two"},
+			Tests: map[string]struct{}{"TestAlpha": {}},
+			Files: map[string]struct{}{"pkgtwo/two_test.go": {}},
+		},
+	}
+	result, err := buildExecutionPlan(selections, planOptions{Coalesce: true, MaxSelectedTests: 2})
+	require.NoError(t, err)
+	require.Equal(t, 3, result.Matrix.SelectedTestCount)
+	require.Empty(t, result.Matrix.Include)
+	require.Equal(t, "Skipping execution because 3 selected tests exceeds the limit of 2.", result.Summary.SkipReason)
+	require.Contains(t, renderSummary([]string{"pkgone/one_test.go", "pkgtwo/two_test.go"}, result.Summary), result.Summary.SkipReason)
+}
+
+func TestBuildExecutionPlanRunsAtSelectedTestLimit(t *testing.T) {
+	t.Parallel()
+
+	selection := &packageSelection{
+		Key:   packageKey{Dir: "pkg", Name: "sample"},
+		Tests: map[string]struct{}{"TestAlpha": {}, "TestBeta": {}},
+		Files: map[string]struct{}{"pkg/sample_test.go": {}},
+	}
+	result, err := buildExecutionPlan(map[packageKey]*packageSelection{selection.Key: selection}, planOptions{MaxSelectedTests: 2})
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Matrix.SelectedTestCount)
+	require.Len(t, result.Matrix.Include, 1)
+	require.Empty(t, result.Summary.SkipReason)
+}

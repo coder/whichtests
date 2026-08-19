@@ -21,7 +21,10 @@ func TestRunValidationErrors(t *testing.T) {
 		return gitResult{}, errors.New("git should not be called")
 	}
 
-	err := runCommand(t.Context(), commandConfig{config: config{OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
+	err := runCommand(t.Context(), commandConfig{config: config{MaxSelectedTests: -1, OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
+	require.EqualError(t, err, "--max-selected-tests must not be negative")
+
+	err = runCommand(t.Context(), commandConfig{config: config{OutMatrix: "matrix.json"}}, &stdout, &stderr, neverGit, nil)
 	require.EqualError(t, err, "--base-sha is required")
 
 	err = runCommand(t.Context(), commandConfig{config: config{BaseSHA: "base"}}, &stdout, &stderr, neverGit, nil)
@@ -108,6 +111,7 @@ func TestShared(t *testing.T) {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
+	require.Equal(t, 2, matrix.SelectedTestCount)
 	require.Len(t, matrix.Include, 2)
 	require.Equal(t, "./pkgone", matrix.Include[0].Package)
 	require.Equal(t, "^(TestShared)(/.*)?$", matrix.Include[0].RunRegex)
@@ -194,6 +198,7 @@ func TestSharedTwo(t *testing.T) {
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(matrixData, &matrix))
+	require.Equal(t, 2, matrix.SelectedTestCount)
 	require.Len(t, matrix.Include, 1)
 	require.Equal(t, "./pkgone ./pkgtwo", matrix.Include[0].Package)
 	require.Equal(t, "^(TestSharedOne|TestSharedTwo)(/.*)?$", matrix.Include[0].RunRegex)
@@ -204,6 +209,80 @@ func TestSharedTwo(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(summary), "### `./pkgone`")
 	require.Contains(t, string(summary), "### `./pkgtwo`")
+}
+
+func TestRunSkipsExecutionAboveSelectedTestLimit(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	baseFiles := map[string]string{
+		"pkg/sample_test.go": `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("before alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("before beta")
+}
+`,
+	}
+	headFiles := map[string]string{
+		"pkg/sample_test.go": `package sample
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	t.Log("after alpha")
+}
+
+func TestBeta(t *testing.T) {
+	t.Log("after beta")
+}
+`,
+	}
+	repo := fakeGitRepo{
+		changes:   []testFileChange{{Kind: changeModified, OldPath: "pkg/sample_test.go", NewPath: "pkg/sample_test.go"}},
+		revisions: map[string]map[string]string{"base": baseFiles, "head": headFiles},
+		diffOutputs: map[string]string{
+			"pkg/sample_test.go": diffForChange(
+				rangeSpan(
+					singleLineRange(t, baseFiles["pkg/sample_test.go"], `t.Log("before alpha")`),
+					singleLineRange(t, baseFiles["pkg/sample_test.go"], `t.Log("before beta")`),
+				),
+				rangeSpan(
+					singleLineRange(t, headFiles["pkg/sample_test.go"], `t.Log("after alpha")`),
+					singleLineRange(t, headFiles["pkg/sample_test.go"], `t.Log("after beta")`),
+				),
+			),
+		},
+	}
+
+	matrixPath := filepath.Join(repoRoot, "matrix.json")
+	summaryPath := filepath.Join(repoRoot, "summary.md")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := runCommand(t.Context(), commandConfig{config: config{
+		RepoRoot: repoRoot, BaseSHA: "base", HeadSHA: "head",
+		OutMatrix: matrixPath, OutSummary: summaryPath, Coalesce: true, MaxSelectedTests: 1,
+	}}, &stdout, &stderr, repo.runner(t), nil)
+	require.NoError(t, err)
+
+	var matrix matrixOutput
+	matrixData, err := os.ReadFile(matrixPath)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(matrixData, &matrix))
+	require.Equal(t, 2, matrix.SelectedTestCount)
+	require.Empty(t, matrix.Include)
+
+	summary, err := os.ReadFile(summaryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(summary), "Selected 2 tests across 1 package targets")
+	require.Contains(t, string(summary), "Skipping execution because 2 selected tests exceeds the limit of 1.")
+	require.Contains(t, string(summary), "TestAlpha")
+	require.Contains(t, string(summary), "TestBeta")
 }
 
 func TestRunWritesSummaryToStdout(t *testing.T) {

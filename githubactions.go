@@ -76,7 +76,10 @@ func githubActionsRunRequest(ctx context.Context, cfg commandConfig, git gitRunn
 			GitHubOutput:      githubOutput,
 			GitHubStepSummary: stepSummary,
 		},
-		Plan: planOptions{Coalesce: baseCfg.Coalesce},
+		Plan: planOptions{
+			Coalesce:         baseCfg.Coalesce,
+			MaxSelectedTests: baseCfg.MaxSelectedTests,
+		},
 	}
 
 	switch eventName {
