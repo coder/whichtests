@@ -23,12 +23,12 @@ func TestPublishPlanWritesCompactGitHubOutputs(t *testing.T) {
 		OutSummary:        summaryPath,
 		GitHubOutput:      outputPath,
 		GitHubStepSummary: stepSummaryPath,
-	}, matrixOutput{Include: []matrixEntry{{Package: "./pkg", RunRegex: "^(TestAlpha)(/.*)?$", TestCount: "10"}}}, summary, nil)
+	}, matrixOutput{SelectedTestCount: 1, Include: []matrixEntry{{Package: "./pkg", RunRegex: "^(TestAlpha)(/.*)?$", TestCount: "10"}}}, summary, nil)
 	require.NoError(t, err)
 
 	matrixData, err := os.ReadFile(matrixPath)
 	require.NoError(t, err)
-	wantMatrix := `{"include":[{"package":"./pkg","run_regex":"^(TestAlpha)(/.*)?$","test_count":"10"}]}`
+	wantMatrix := `{"selected_test_count":1,"include":[{"package":"./pkg","run_regex":"^(TestAlpha)(/.*)?$","test_count":"10"}]}`
 	require.Equal(t, wantMatrix+"\n", string(matrixData))
 
 	outputData, err := os.ReadFile(outputPath)
@@ -50,7 +50,7 @@ func TestPublishPlanWritesEmptyMatrixAndRejectsUnsafeOutput(t *testing.T) {
 
 	matrixData, err := marshalMatrix(matrixOutput{})
 	require.NoError(t, err)
-	require.Equal(t, `{"include":[]}`, string(matrixData))
+	require.Equal(t, `{"selected_test_count":0,"include":[]}`, string(matrixData))
 
 	err = ensureGitHubOutputFits("matrix", "first\nsecond", defaultGitHubOutputValueLimit)
 	require.ErrorContains(t, err, "single line")

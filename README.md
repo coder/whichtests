@@ -35,7 +35,9 @@ go run ./ \
 
 For `pull_request` events, checkout must use the PR head SHA, for example `github.event.pull_request.head.sha`. The default synthetic merge ref is rejected because the checked-out `HEAD` must match `pull_request.head.sha`.
 
-The matrix JSON contains `include` rows with `package`, `run_regex`, and `test_count`. By default, each row represents one safe Go package pattern and a precise regex for the directly changed runnable tests in that package. The generator does not emit whole-package fallback rows.
+The matrix JSON contains `selected_test_count` plus `include` rows with `package`, `run_regex`, and `test_count`. By default, each row represents one safe Go package pattern and a precise regex for the directly changed runnable tests in that package. The generator does not emit whole-package fallback rows.
+
+`--max-selected-tests` limits the size of the execution plan. When the exact package-aware selection exceeds the limit, `whichtests` preserves the selection in the Markdown summary but emits an empty `include` array so workflow consumers can skip execution. A limit of zero disables this behavior.
 
 ## Coalescing into a single matrix row
 

@@ -16,7 +16,8 @@ var (
 )
 
 type matrixOutput struct {
-	Include []matrixEntry `json:"include"`
+	SelectedTestCount int           `json:"selected_test_count"`
+	Include           []matrixEntry `json:"include"`
 }
 
 type matrixEntry struct {
@@ -26,7 +27,8 @@ type matrixEntry struct {
 }
 
 type summaryReport struct {
-	Entries []summaryEntry
+	Entries    []summaryEntry
+	SkipReason string
 }
 
 type summaryEntry struct {
@@ -67,7 +69,10 @@ func selectTestPlan(ctx context.Context, cfg config, git gitRunner) ([]string, b
 		}
 	}
 
-	result, err := buildExecutionPlan(selections, planOptions{Coalesce: cfg.Coalesce})
+	result, err := buildExecutionPlan(selections, planOptions{
+		Coalesce:         cfg.Coalesce,
+		MaxSelectedTests: cfg.MaxSelectedTests,
+	})
 	if err != nil {
 		return nil, buildResult{}, err
 	}
@@ -114,8 +119,25 @@ func buildExecutionPlan(selections map[packageKey]*packageSelection, opts planOp
 			Notes:     entry.Notes,
 		})
 	}
+	result.Matrix.SelectedTestCount = selectedTestCount(result.Summary)
+	if opts.MaxSelectedTests > 0 && result.Matrix.SelectedTestCount > opts.MaxSelectedTests {
+		result.Summary.SkipReason = fmt.Sprintf(
+			"Skipping execution because %d selected tests exceeds the limit of %d.",
+			result.Matrix.SelectedTestCount,
+			opts.MaxSelectedTests,
+		)
+		return result, nil
+	}
 	result.Matrix.Include = buildMatrixInclude(accumulators, orderedPackages, opts)
 	return result, nil
+}
+
+func selectedTestCount(summary summaryReport) int {
+	count := 0
+	for _, entry := range summary.Entries {
+		count += len(entry.Tests)
+	}
+	return count
 }
 
 // planOptions configures non-essential plan-shaping behavior. Validation and
@@ -129,6 +151,9 @@ type planOptions struct {
 	// (for example, to amplify scheduling contention in a flake hunt) at the
 	// cost of giving up per-package precision in -run.
 	Coalesce bool
+	// MaxSelectedTests emits an empty execution matrix when the selection is
+	// larger than this value. Zero disables the limit.
+	MaxSelectedTests int
 }
 
 // buildMatrixInclude renders the matrix include rows for the given
@@ -228,6 +253,9 @@ func renderSummary(changedFiles []string, summary summaryReport) string {
 		totalTests += len(entry.Tests)
 	}
 	_, _ = fmt.Fprintf(&builder, "Selected %d tests across %d package targets.\n\n", totalTests, len(summary.Entries))
+	if summary.SkipReason != "" {
+		_, _ = builder.WriteString(summary.SkipReason + "\n\n")
+	}
 	for _, entry := range summary.Entries {
 		_, _ = builder.WriteString("### `" + entry.Label + "`\n\n")
 		_, _ = builder.WriteString("Files:\n")

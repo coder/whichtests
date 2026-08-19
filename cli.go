@@ -21,6 +21,7 @@ func main() {
 	flags.StringVar(&cfg.OutSummary, "out-summary", cfg.OutSummary, "path to write Markdown summary, or - for stdout")
 	flags.BoolVar(&cfg.GitHubActions, "github-actions", cfg.GitHubActions, "read diff range and output paths from GitHub Actions environment")
 	flags.BoolVar(&cfg.Coalesce, "coalesce", cfg.Coalesce, "emit a single matrix row whose package list and run-regex union every selected package and test")
+	flags.IntVar(&cfg.MaxSelectedTests, "max-selected-tests", cfg.MaxSelectedTests, "emit an empty execution matrix when more than this many tests are selected; zero disables the limit")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -32,6 +33,9 @@ func main() {
 }
 
 func runCommand(ctx context.Context, cfg commandConfig, stdout, stderr io.Writer, git gitRunner, fetch gitFetcher) error {
+	if cfg.MaxSelectedTests < 0 {
+		return errors.New("--max-selected-tests must not be negative")
+	}
 	var (
 		req runRequest
 		err error
@@ -71,7 +75,10 @@ func explicitRunRequest(cfg config) (runRequest, error) {
 			OutMatrix:  cfg.OutMatrix,
 			OutSummary: cfg.OutSummary,
 		},
-		Plan: planOptions{Coalesce: cfg.Coalesce},
+		Plan: planOptions{
+			Coalesce:         cfg.Coalesce,
+			MaxSelectedTests: cfg.MaxSelectedTests,
+		},
 	}, nil
 }
 
@@ -80,10 +87,11 @@ func executeRunRequest(ctx context.Context, req runRequest, stdout, stderr io.Wr
 		return err
 	}
 	selectorCfg := config{
-		RepoRoot: req.RepoRoot,
-		BaseSHA:  req.Range.BaseSHA,
-		HeadSHA:  req.Range.HeadSHA,
-		Coalesce: req.Plan.Coalesce,
+		RepoRoot:         req.RepoRoot,
+		BaseSHA:          req.Range.BaseSHA,
+		HeadSHA:          req.Range.HeadSHA,
+		Coalesce:         req.Plan.Coalesce,
+		MaxSelectedTests: req.Plan.MaxSelectedTests,
 	}
 	changedFiles, result, err := selectTestPlan(ctx, selectorCfg, git)
 	if err != nil {

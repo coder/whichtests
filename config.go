@@ -12,12 +12,13 @@ const (
 )
 
 type config struct {
-	RepoRoot   string
-	BaseSHA    string
-	HeadSHA    string
-	OutMatrix  string
-	OutSummary string
-	Coalesce   bool
+	RepoRoot         string
+	BaseSHA          string
+	HeadSHA          string
+	OutMatrix        string
+	OutSummary       string
+	Coalesce         bool
+	MaxSelectedTests int
 }
 
 func defaultConfig() config {
